@@ -22,7 +22,7 @@ $(BUILD)/kernel.o: kernel/kernel.c | $(BUILD)
 	$(CC) -target i386-unknown-none -ffreestanding -fno-stack-protector -fno-pic -m32 -c kernel/kernel.c -o $(BUILD)/kernel.o
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.o
-	$(LD) -flavor gnu -Ttext 0x1000 --oformat binary -o $(BUILD)/kernel.bin $(BUILD)/kernel.o
+	$(LD) -flavor gnu -Ttext 0x1000 --image-base 0x0 --oformat binary -o $(BUILD)/kernel.bin $(BUILD)/kernel.o
 
 $(IMAGE): $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	dd if=/dev/zero of=$(IMAGE) bs=512 count=2880
