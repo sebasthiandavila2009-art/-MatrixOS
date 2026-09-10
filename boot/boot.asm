@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 0.2
+; Version 0.2 Debug
 
 BITS 16
 ORG 0x7C00
@@ -15,7 +15,11 @@ start:
 
     mov [boot_drive], dl
 
-    ; Load kernel (1 sector) to 0x1000
+    ; Debug: bootloader is running
+    mov si, boot_message
+    call print_string
+
+    ; Load kernel from sector 2
     mov ah, 0x02
     mov al, 1
     mov ch, 0
@@ -26,6 +30,10 @@ start:
     int 0x13
 
     jc disk_error
+
+    ; Debug: kernel loaded
+    mov si, kernel_message
+    call print_string
 
     ; Enable A20
     in al, 0x92
@@ -42,17 +50,23 @@ start:
 
     jmp 0x08:protected_mode
 
-disk_error:
-    mov si, error_message
-
-.print:
+print_string:
+.next:
     lodsb
     test al, al
-    jz .halt
+    jz .done
 
     mov ah, 0x0E
+    mov bh, 0
     int 0x10
-    jmp .print
+    jmp .next
+
+.done:
+    ret
+
+disk_error:
+    mov si, error_message
+    call print_string
 
 .halt:
     cli
@@ -69,11 +83,19 @@ protected_mode:
 
     mov esp, 0x90000
 
-    ; Start MatrixOS kernel
+    ; Jump to C kernel
     jmp 0x08:0x1000
 
 boot_drive db 0
-error_message db 'MATRIXOS: Disk error', 0
+
+boot_message:
+    db 'MATRIXOS: Bootloader OK', 13, 10, 0
+
+kernel_message:
+    db 'MATRIXOS: Kernel loaded', 13, 10, 0
+
+error_message:
+    db 'MATRIXOS: Disk error', 13, 10, 0
 
 gdt_start:
 
