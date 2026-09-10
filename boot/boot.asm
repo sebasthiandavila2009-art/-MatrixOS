@@ -15,11 +15,16 @@ start:
 
     mov [boot_drive], dl
 
-    ; Load kernel using BIOS extended disk read
-    mov si, disk_address_packet
+    ; Load kernel (1 sector) to 0x1000
+    mov ah, 0x02
+    mov al, 1
+    mov ch, 0
+    mov cl, 2
+    mov dh, 0
     mov dl, [boot_drive]
-    mov ah, 0x42
+    mov bx, 0x1000
     int 0x13
+
     jc disk_error
 
     ; Enable A20
@@ -64,20 +69,11 @@ protected_mode:
 
     mov esp, 0x90000
 
-    ; Jump to the loaded kernel
+    ; Start MatrixOS kernel
     jmp 0x08:0x1000
 
 boot_drive db 0
 error_message db 'MATRIXOS: Disk error', 0
-
-; BIOS Extended Disk Address Packet
-disk_address_packet:
-    db 0x10
-    db 0
-    dw 123
-    dw 0x1000
-    dw 0
-    dq 1
 
 gdt_start:
 
