@@ -69,6 +69,7 @@ protected_mode:
 
     mov esp, 0x90000
 
+    ; Jump to the loaded kernel
     jmp 0x08:0x1000
 
 boot_drive db 0
