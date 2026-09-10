@@ -1,7 +1,10 @@
 # MatrixOS Build System
-# Version 0.1
+# Version 0.2
 
 ASM = nasm
+CC = clang
+LD = $(shell brew --prefix lld)/bin/ld.lld
+
 BUILD = build
 IMAGE = $(BUILD)/matrixos.img
 
@@ -15,9 +18,16 @@ $(BUILD):
 $(BUILD)/boot.bin: boot/boot.asm | $(BUILD)
 	$(ASM) -f bin boot/boot.asm -o $(BUILD)/boot.bin
 
-$(IMAGE): $(BUILD)/boot.bin
+$(BUILD)/kernel.o: kernel/kernel.c | $(BUILD)
+	$(CC) -target i386-unknown-none -ffreestanding -fno-stack-protector -fno-pic -m32 -c kernel/kernel.c -o $(BUILD)/kernel.o
+
+$(BUILD)/kernel.bin: $(BUILD)/kernel.o
+	$(LD) -flavor gnu -Ttext 0x1000 --oformat binary -o $(BUILD)/kernel.bin $(BUILD)/kernel.o
+
+$(IMAGE): $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	dd if=/dev/zero of=$(IMAGE) bs=512 count=2880
 	dd if=$(BUILD)/boot.bin of=$(IMAGE) conv=notrunc
+	dd if=$(BUILD)/kernel.bin of=$(IMAGE) bs=512 seek=1 conv=notrunc
 
 run: $(IMAGE)
 	qemu-system-x86_64 -drive format=raw,file=$(IMAGE)
