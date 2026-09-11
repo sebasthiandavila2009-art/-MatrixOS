@@ -1,5 +1,5 @@
 // MatrixOS Keyboard Driver
-// Version 0.4
+// Version 0.5 - Non-Blocking Input
 
 #define KEYBOARD_DATA   0x60
 #define KEYBOARD_STATUS 0x64
@@ -17,24 +17,32 @@ static inline unsigned char inb(unsigned short port)
     return value;
 }
 
+/*
+ * Read keyboard input without freezing the kernel.
+ *
+ * Returns:
+ *   0 = no key available
+ *   ASCII character = key pressed
+ */
 char keyboard_get_char(void)
 {
     unsigned char scancode;
 
-    // Wait until the keyboard has data
-    while ((inb(KEYBOARD_STATUS) & 1) == 0)
-    {
-    }
+    /*
+     * Check whether the keyboard has data.
+     * Do NOT wait here.
+     */
+    if ((inb(KEYBOARD_STATUS) & 1) == 0)
+        return 0;
 
     scancode = inb(KEYBOARD_DATA);
 
-    // Ignore key-release codes
+    /*
+     * Ignore key-release codes.
+     */
     if (scancode & 0x80)
-    {
         return 0;
-    }
 
-    // Basic PS/2 Set 1 scancode → ASCII
     switch (scancode)
     {
         case 0x02: return '1';
@@ -78,7 +86,9 @@ char keyboard_get_char(void)
         case 0x32: return 'm';
 
         case 0x39: return ' ';
+
         case 0x1C: return '\n';
+
         case 0x0E: return '\b';
 
         default:
