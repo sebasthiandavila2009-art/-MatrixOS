@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 1.5 - Stable Terminal Input
+// Version 1.6 - Stable Desktop + Cursor
 
 extern void mouse_init(void);
 
@@ -24,13 +24,18 @@ extern void graphics_rectangle(
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
 
-#define TERMINAL_X 35
-#define TERMINAL_Y 25
-#define TERMINAL_WIDTH 250
-#define TERMINAL_HEIGHT 140
+#define TERMINAL_X       35
+#define TERMINAL_Y       25
+#define TERMINAL_WIDTH   250
+#define TERMINAL_HEIGHT  140
 
-#define TEXT_START_X 50
-#define TEXT_START_Y 60
+#define TEXT_START_X     50
+#define TEXT_START_Y     60
+
+#define CURSOR_WIDTH     20
+#define CURSOR_HEIGHT    22
+
+#define MAX_TEXT         512
 
 int cursor_x = 160;
 int cursor_y = 100;
@@ -40,47 +45,58 @@ int terminal_open = 0;
 int text_x = TEXT_START_X;
 int text_y = TEXT_START_Y;
 
+/*
+ * Store terminal text.
+ *
+ * This lets MatrixOS redraw the terminal
+ * without losing what the user typed.
+ */
+static char terminal_text[MAX_TEXT];
+
+int terminal_text_length = 0;
+
 
 /*
- * 5x7 font data.
+ * 5x7 font.
  *
- * Characters supported:
  * A-Z
  */
+
 static const unsigned char font[26][7] =
 {
-    {14,17,17,31,17,17,17}, /* A */
-    {30,17,17,30,17,17,30}, /* B */
-    {14,17,16,16,16,17,14}, /* C */
-    {30,17,17,17,17,17,30}, /* D */
-    {31,16,16,30,16,16,31}, /* E */
-    {31,16,16,30,16,16,16}, /* F */
-    {14,17,16,23,17,17,15}, /* G */
-    {17,17,17,31,17,17,17}, /* H */
-    {31,4,4,4,4,4,31},      /* I */
-    {7,2,2,2,18,18,12},     /* J */
-    {17,18,20,24,20,18,17}, /* K */
-    {16,16,16,16,16,16,31}, /* L */
-    {17,27,21,21,17,17,17}, /* M */
-    {17,25,21,19,17,17,17}, /* N */
-    {14,17,17,17,17,17,14}, /* O */
-    {30,17,17,30,16,16,16}, /* P */
-    {14,17,17,17,21,18,13}, /* Q */
-    {30,17,17,30,20,18,17}, /* R */
-    {15,16,16,14,1,1,30},    /* S */
-    {31,4,4,4,4,4,4},        /* T */
-    {17,17,17,17,17,17,14}, /* U */
-    {17,17,17,17,17,10,4},  /* V */
-    {17,17,17,21,21,21,10}, /* W */
-    {17,17,10,4,10,17,17},  /* X */
-    {17,17,10,4,4,4,4},     /* Y */
-    {31,1,2,4,8,16,31}      /* Z */
+    {14,17,17,31,17,17,17},
+    {30,17,17,30,17,17,30},
+    {14,17,16,16,16,17,14},
+    {30,17,17,17,17,17,30},
+    {31,16,16,30,16,16,31},
+    {31,16,16,30,16,16,16},
+    {14,17,16,23,17,17,15},
+    {17,17,17,31,17,17,17},
+    {31,4,4,4,4,4,31},
+    {7,2,2,2,18,18,12},
+    {17,18,20,24,20,18,17},
+    {16,16,16,16,16,16,31},
+    {17,27,21,21,17,17,17},
+    {17,25,21,19,17,17,17},
+    {14,17,17,17,17,17,14},
+    {30,17,17,30,16,16,16},
+    {14,17,17,17,21,18,13},
+    {30,17,17,30,20,18,17},
+    {15,16,16,14,1,1,30},
+    {31,4,4,4,4,4,4},
+    {17,17,17,17,17,17,14},
+    {17,17,17,17,17,10,4},
+    {17,17,17,21,21,21,10},
+    {17,17,10,4,10,17,17},
+    {17,17,10,4,4,4,4},
+    {31,1,2,4,8,16,31}
 };
 
 
 /*
- * Get font pattern.
+ * Get font row.
  */
+
 unsigned char get_font_row(char c, int row)
 {
     if (c >= 'a' && c <= 'z')
@@ -97,31 +113,20 @@ unsigned char get_font_row(char c, int row)
 
 
 /*
- * Draw a character.
+ * Draw one character at a specific position.
  */
-void draw_character(char c)
+
+void draw_character_at(
+    char c,
+    int x,
+    int y)
 {
     int row;
     int col;
 
-    /*
-     * Space.
-     */
-    if (c == ' ')
-    {
-        text_x += 6;
-        return;
-    }
-
-    /*
-     * Convert lowercase to uppercase.
-     */
     if (c >= 'a' && c <= 'z')
         c -= 32;
 
-    /*
-     * Only draw A-Z for now.
-     */
     if (c < 'A' || c > 'Z')
         return;
 
@@ -136,8 +141,8 @@ void draw_character(char c)
             if (pattern & (1 << (4 - col)))
             {
                 graphics_rectangle(
-                    text_x + col,
-                    text_y + row,
+                    x + col,
+                    y + row,
                     1,
                     1,
                     15
@@ -145,32 +150,62 @@ void draw_character(char c)
             }
         }
     }
+}
 
-    text_x += 6;
 
-    /*
-     * New line when reaching the right side.
-     */
-    if (text_x > 265)
+/*
+ * Draw the saved terminal text.
+ */
+
+void draw_terminal_text(void)
+{
+    int i;
+
+    int x = TEXT_START_X;
+    int y = TEXT_START_Y;
+
+    for (i = 0; i < terminal_text_length; i++)
     {
-        text_x = TEXT_START_X;
-        text_y += 10;
+        char c = terminal_text[i];
+
+        if (c == '\n')
+        {
+            x = TEXT_START_X;
+            y += 10;
+            continue;
+        }
+
+        if (c == ' ')
+        {
+            x += 6;
+            continue;
+        }
+
+        draw_character_at(c, x, y);
+
+        x += 6;
+
+        if (x > 265)
+        {
+            x = TEXT_START_X;
+            y += 10;
+        }
+
+        if (y > 145)
+        {
+            break;
+        }
     }
 
-    /*
-     * Keep text inside the terminal.
-     */
-    if (text_y > 145)
-    {
-        text_x = TEXT_START_X;
-        text_y = TEXT_START_Y;
-    }
+    text_x = x;
+    text_y = y;
 }
 
 
 /*
  * Draw desktop.
  */
+
 void draw_desktop(void)
 {
     graphics_clear(1);
@@ -178,6 +213,7 @@ void draw_desktop(void)
     /*
      * Top bar.
      */
+
     graphics_rectangle(
         0,
         0,
@@ -189,6 +225,7 @@ void draw_desktop(void)
     /*
      * Taskbar.
      */
+
     graphics_rectangle(
         0,
         SCREEN_HEIGHT - 16,
@@ -200,6 +237,7 @@ void draw_desktop(void)
     /*
      * Terminal icon.
      */
+
     graphics_rectangle(
         20,
         40,
@@ -211,6 +249,7 @@ void draw_desktop(void)
     /*
      * Files icon.
      */
+
     graphics_rectangle(
         90,
         40,
@@ -222,6 +261,7 @@ void draw_desktop(void)
     /*
      * Settings icon.
      */
+
     graphics_rectangle(
         160,
         40,
@@ -233,6 +273,7 @@ void draw_desktop(void)
     /*
      * Icon details.
      */
+
     graphics_rectangle(
         28,
         50,
@@ -262,11 +303,13 @@ void draw_desktop(void)
 /*
  * Draw terminal window.
  */
+
 void draw_terminal(void)
 {
     /*
      * Main window.
      */
+
     graphics_rectangle(
         TERMINAL_X,
         TERMINAL_Y,
@@ -278,6 +321,7 @@ void draw_terminal(void)
     /*
      * Title bar.
      */
+
     graphics_rectangle(
         TERMINAL_X,
         TERMINAL_Y,
@@ -289,6 +333,7 @@ void draw_terminal(void)
     /*
      * Close button.
      */
+
     graphics_rectangle(
         268,
         29,
@@ -300,6 +345,7 @@ void draw_terminal(void)
     /*
      * Terminal screen.
      */
+
     graphics_rectangle(
         45,
         50,
@@ -309,8 +355,9 @@ void draw_terminal(void)
     );
 
     /*
-     * Prompt.
+     * Terminal prompt.
      */
+
     graphics_rectangle(
         50,
         60,
@@ -318,17 +365,120 @@ void draw_terminal(void)
         7,
         10
     );
+
+    /*
+     * Draw text that has already been typed.
+     */
+
+    draw_terminal_text();
+}
+
+
+/*
+ * Cursor background.
+ *
+ * Before drawing the cursor, save the pixels underneath it.
+ * When the cursor moves, restore those pixels.
+ */
+
+unsigned char cursor_background[
+    CURSOR_WIDTH * CURSOR_HEIGHT
+];
+
+
+/*
+ * The framebuffer address.
+ */
+
+volatile unsigned char *framebuffer =
+    (unsigned char *)0xA0000;
+
+
+/*
+ * Save the background underneath the cursor.
+ */
+
+void cursor_save_background(void)
+{
+    int x;
+    int y;
+
+    for (y = 0; y < CURSOR_HEIGHT; y++)
+    {
+        for (x = 0; x < CURSOR_WIDTH; x++)
+        {
+            int px = cursor_x + x;
+            int py = cursor_y + y;
+
+            if (px >= 0 &&
+                px < SCREEN_WIDTH &&
+                py >= 0 &&
+                py < SCREEN_HEIGHT)
+            {
+                cursor_background[
+                    y * CURSOR_WIDTH + x
+                ] =
+                    framebuffer[
+                        py * SCREEN_WIDTH + px
+                    ];
+            }
+            else
+            {
+                cursor_background[
+                    y * CURSOR_WIDTH + x
+                ] = 0;
+            }
+        }
+    }
+}
+
+
+/*
+ * Restore the background underneath the cursor.
+ */
+
+void cursor_restore_background(void)
+{
+    int x;
+    int y;
+
+    for (y = 0; y < CURSOR_HEIGHT; y++)
+    {
+        for (x = 0; x < CURSOR_WIDTH; x++)
+        {
+            int px = cursor_x + x;
+            int py = cursor_y + y;
+
+            if (px >= 0 &&
+                px < SCREEN_WIDTH &&
+                py >= 0 &&
+                py < SCREEN_HEIGHT)
+            {
+                framebuffer[
+                    py * SCREEN_WIDTH + px
+                ] =
+                    cursor_background[
+                        y * CURSOR_WIDTH + x
+                    ];
+            }
+        }
+    }
 }
 
 
 /*
  * Draw MatrixOS cursor.
  */
-void draw_cursor(int x, int y)
+
+void draw_cursor(void)
 {
+    int x = cursor_x;
+    int y = cursor_y;
+
     /*
      * Black outline.
      */
+
     graphics_rectangle(x, y, 2, 18, 0);
     graphics_rectangle(x + 2, y + 2, 2, 16, 0);
     graphics_rectangle(x + 4, y + 4, 2, 14, 0);
@@ -350,6 +500,7 @@ void draw_cursor(int x, int y)
     /*
      * White interior.
      */
+
     graphics_rectangle(
         x + 2,
         y + 2,
@@ -401,8 +552,9 @@ void draw_cursor(int x, int y)
 
 
 /*
- * Is the cursor over Terminal?
+ * Is cursor over Terminal icon?
  */
+
 int cursor_over_terminal(void)
 {
     if (cursor_x >= 20 &&
@@ -418,8 +570,75 @@ int cursor_over_terminal(void)
 
 
 /*
- * Process keyboard input.
+ * Is cursor over Terminal close button?
  */
+
+int cursor_over_close(void)
+{
+    if (cursor_x >= 268 &&
+        cursor_x < 278 &&
+        cursor_y >= 29 &&
+        cursor_y < 39)
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+/*
+ * Open terminal.
+ */
+
+void open_terminal(void)
+{
+    terminal_open = 1;
+
+    draw_desktop();
+    draw_terminal();
+
+    cursor_save_background();
+    draw_cursor();
+}
+
+
+/*
+ * Close terminal.
+ */
+
+void close_terminal(void)
+{
+    terminal_open = 0;
+
+    draw_desktop();
+
+    cursor_save_background();
+    draw_cursor();
+}
+
+
+/*
+ * Add character to terminal buffer.
+ */
+
+void add_terminal_character(char key)
+{
+    if (terminal_text_length >= MAX_TEXT - 1)
+        return;
+
+    terminal_text[
+        terminal_text_length
+    ] = key;
+
+    terminal_text_length++;
+}
+
+
+/*
+ * Handle keyboard input.
+ */
+
 void handle_keyboard(void)
 {
     char key;
@@ -432,19 +651,14 @@ void handle_keyboard(void)
     /*
      * Backspace.
      */
+
     if (key == '\b')
     {
-        if (text_x > TEXT_START_X)
+        if (terminal_text_length > 0)
         {
-            text_x -= 6;
+            terminal_text_length--;
 
-            graphics_rectangle(
-                text_x,
-                text_y,
-                6,
-                8,
-                0
-            );
+            draw_terminal();
         }
 
         return;
@@ -453,15 +667,12 @@ void handle_keyboard(void)
     /*
      * Enter.
      */
+
     if (key == '\n')
     {
-        text_x = TEXT_START_X;
-        text_y += 10;
+        add_terminal_character('\n');
 
-        if (text_y > 145)
-        {
-            text_y = TEXT_START_Y;
-        }
+        draw_terminal();
 
         return;
     }
@@ -469,13 +680,22 @@ void handle_keyboard(void)
     /*
      * Normal character.
      */
-    draw_character(key);
+
+    if ((key >= 'a' && key <= 'z') ||
+        (key >= 'A' && key <= 'Z') ||
+        key == ' ')
+    {
+        add_terminal_character(key);
+
+        draw_terminal();
+    }
 }
 
 
 /*
  * MatrixOS kernel.
  */
+
 void kernel_main(void)
 {
     int dx;
@@ -486,78 +706,127 @@ void kernel_main(void)
 
     mouse_init();
 
+    /*
+     * Draw initial desktop.
+     */
+
     draw_desktop();
-    draw_cursor(cursor_x, cursor_y);
+
+    /*
+     * Save background and draw cursor.
+     */
+
+    cursor_save_background();
+    draw_cursor();
+
+
+    /*
+     * Main MatrixOS loop.
+     */
 
     while (1)
     {
         /*
          * Keyboard.
          */
+
         if (terminal_open)
         {
             handle_keyboard();
         }
 
+
         /*
          * Mouse.
          */
+
         if (mouse_get_packet(
                 &dx,
                 &dy,
                 &buttons))
         {
+            /*
+             * Remove old cursor.
+             */
+
+            cursor_restore_background();
+
+
+            /*
+             * Move cursor.
+             */
+
             cursor_x += dx;
             cursor_y -= dy;
+
 
             /*
              * Screen boundaries.
              */
+
             if (cursor_x < 0)
                 cursor_x = 0;
 
-            if (cursor_x > SCREEN_WIDTH - 18)
-                cursor_x = SCREEN_WIDTH - 18;
+            if (cursor_x >
+                SCREEN_WIDTH - CURSOR_WIDTH)
+            {
+                cursor_x =
+                    SCREEN_WIDTH - CURSOR_WIDTH;
+            }
 
             if (cursor_y < 0)
                 cursor_y = 0;
 
-            if (cursor_y > SCREEN_HEIGHT - 20)
-                cursor_y = SCREEN_HEIGHT - 20;
+            if (cursor_y >
+                SCREEN_HEIGHT - CURSOR_HEIGHT)
+            {
+                cursor_y =
+                    SCREEN_HEIGHT - CURSOR_HEIGHT;
+            }
+
 
             /*
-             * New left click.
+             * Detect new left click.
              */
+
             if ((buttons & 1) &&
                 !(old_buttons & 1))
             {
-                if (cursor_over_terminal())
+                /*
+                 * Open Terminal.
+                 */
+
+                if (!terminal_open &&
+                    cursor_over_terminal())
                 {
-                    terminal_open = 1;
+                    open_terminal();
+                }
+
+                /*
+                 * Close Terminal.
+                 */
+
+                else if (terminal_open &&
+                         cursor_over_close())
+                {
+                    close_terminal();
                 }
             }
 
             old_buttons = buttons;
 
-            /*
-             * Only redraw the desktop when
-             * Terminal is NOT open.
-             *
-             * This prevents typed characters
-             * from disappearing.
-             */
-            if (!terminal_open)
-            {
-                draw_desktop();
-            }
 
             /*
-             * Cursor always gets drawn last.
+             * Save new background.
              */
-            draw_cursor(
-                cursor_x,
-                cursor_y
-            );
+
+            cursor_save_background();
+
+            /*
+             * Draw cursor last.
+             */
+
+            draw_cursor();
         }
     }
 }
