@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 0.5
+// Version 0.6
 
 extern char keyboard_get_char(void);
 extern void mouse_init(void);
@@ -10,18 +10,18 @@ int cursor = 0;
 
 void kernel_main(void)
 {
-    const char *message = "MATRIXOS v0.5 - MOUSE READY";
+    const char *message = "MATRIXOS v0.6 - MOUSE TEST";
 
-    /* Initialize the mouse */
-    mouse_init();
-
-    /* Display startup message */
+    /* Show that the kernel started */
     for (int i = 0; message[i] != '\0'; i++)
     {
         video[cursor++] = (unsigned short)message[i] | 0x0700;
     }
 
     cursor++;
+
+    /* Initialize mouse after the message is visible */
+    mouse_init();
 
     /* Keyboard loop */
     while (1)
