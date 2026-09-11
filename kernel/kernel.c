@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 1.0 - First GUI Interaction
+// Version 1.1 - MatrixOS Desktop
 
 extern void mouse_init(void);
 
@@ -22,61 +22,112 @@ extern void graphics_rectangle(
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
 
-#define BUTTON_X      110
-#define BUTTON_Y      70
-#define BUTTON_WIDTH  100
-#define BUTTON_HEIGHT 60
+#define TOPBAR_HEIGHT 18
+#define TASKBAR_HEIGHT 16
 
 int cursor_x = 160;
 int cursor_y = 100;
 
-int button_pressed = 0;
-
 /*
- * Draw the main MatrixOS screen.
+ * Draw a simple MatrixOS desktop.
  */
-void draw_screen(void)
+void draw_desktop(void)
 {
+    /*
+     * Main desktop background.
+     */
     graphics_clear(1);
 
     /*
-     * Draw GUI button.
+     * Top bar.
      */
-    if (button_pressed)
-    {
-        /*
-         * Button becomes green when clicked.
-         */
-        graphics_rectangle(
-            BUTTON_X,
-            BUTTON_Y,
-            BUTTON_WIDTH,
-            BUTTON_HEIGHT,
-            10
-        );
-    }
-    else
-    {
-        /*
-         * Normal white button.
-         */
-        graphics_rectangle(
-            BUTTON_X,
-            BUTTON_Y,
-            BUTTON_WIDTH,
-            BUTTON_HEIGHT,
-            15
-        );
-    }
+    graphics_rectangle(
+        0,
+        0,
+        SCREEN_WIDTH,
+        TOPBAR_HEIGHT,
+        0
+    );
+
+    /*
+     * Taskbar.
+     */
+    graphics_rectangle(
+        0,
+        SCREEN_HEIGHT - TASKBAR_HEIGHT,
+        SCREEN_WIDTH,
+        TASKBAR_HEIGHT,
+        0
+    );
+
+    /*
+     * Terminal icon.
+     */
+    graphics_rectangle(
+        20,
+        40,
+        50,
+        40,
+        15
+    );
+
+    /*
+     * File Manager icon.
+     */
+    graphics_rectangle(
+        90,
+        40,
+        50,
+        40,
+        15
+    );
+
+    /*
+     * Settings icon.
+     */
+    graphics_rectangle(
+        160,
+        40,
+        50,
+        40,
+        15
+    );
+
+    /*
+     * Small icon details.
+     */
+    graphics_rectangle(
+        28,
+        50,
+        34,
+        4,
+        0
+    );
+
+    graphics_rectangle(
+        98,
+        50,
+        34,
+        4,
+        0
+    );
+
+    graphics_rectangle(
+        168,
+        50,
+        34,
+        4,
+        0
+    );
 }
 
 /*
- * Draw the MatrixOS mouse cursor.
+ * Draw the MatrixOS cursor.
  */
 void draw_cursor(int x, int y)
 {
     /*
-     * Black cursor outline.
+     * Black outline.
      */
     graphics_rectangle(x, y, 2, 18, 0);
 
@@ -93,7 +144,7 @@ void draw_cursor(int x, int y)
     graphics_rectangle(x + 8, y + 16, 10, 4, 0);
 
     /*
-     * White cursor interior.
+     * White interior.
      */
     graphics_rectangle(x + 2, y + 2, 2, 12, 15);
     graphics_rectangle(x + 4, y + 4, 2, 11, 15);
@@ -101,22 +152,6 @@ void draw_cursor(int x, int y)
     graphics_rectangle(x + 8, y + 8, 2, 9, 15);
     graphics_rectangle(x + 10, y + 10, 2, 7, 15);
     graphics_rectangle(x + 12, y + 12, 2, 6, 15);
-}
-
-/*
- * Check whether the cursor is inside the button.
- */
-int cursor_over_button(void)
-{
-    if (cursor_x >= BUTTON_X &&
-        cursor_x < BUTTON_X + BUTTON_WIDTH &&
-        cursor_y >= BUTTON_Y &&
-        cursor_y < BUTTON_Y + BUTTON_HEIGHT)
-    {
-        return 1;
-    }
-
-    return 0;
 }
 
 /*
@@ -128,23 +163,36 @@ void kernel_main(void)
     int dy;
     unsigned char buttons;
 
+    /*
+     * Initialize mouse.
+     */
     mouse_init();
 
-    draw_screen();
+    /*
+     * Draw desktop.
+     */
+    draw_desktop();
+
+    /*
+     * Draw cursor.
+     */
     draw_cursor(cursor_x, cursor_y);
 
+    /*
+     * Main desktop loop.
+     */
     while (1)
     {
         if (mouse_get_packet(&dx, &dy, &buttons))
         {
             /*
-             * Update cursor position.
+             * Update cursor.
              */
             cursor_x += dx;
             cursor_y -= dy;
 
             /*
-             * Keep cursor on screen.
+             * Keep cursor inside screen.
              */
             if (cursor_x < 0)
                 cursor_x = 0;
@@ -159,21 +207,12 @@ void kernel_main(void)
                 cursor_y = SCREEN_HEIGHT - 20;
 
             /*
-             * Left mouse button pressed.
+             * Redraw desktop and cursor.
              */
-            if (buttons & 0x01)
-            {
-                if (cursor_over_button())
-                {
-                    button_pressed = 1;
-                }
-            }
-
-            /*
-             * Redraw screen and cursor.
-             */
-            draw_screen();
+            draw_desktop();
             draw_cursor(cursor_x, cursor_y);
+
+            (void)buttons;
         }
     }
 }
