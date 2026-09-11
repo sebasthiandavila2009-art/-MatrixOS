@@ -1,5 +1,5 @@
 # MatrixOS Build System
-# Version 0.5
+# Version 0.6
 
 ASM = nasm
 CC = clang
@@ -19,7 +19,7 @@ $(BUILD)/boot.bin: boot/boot.asm | $(BUILD)
 	$(ASM) -f bin boot/boot.asm -o $(BUILD)/boot.bin
 
 $(BUILD)/entry.o: kernel/entry.asm | $(BUILD)
-	$(ASM) -f elf32 kernel/entry.asm -o $(BUILD)/entry.o
+	nasm -f elf32 kernel/entry.asm -o $(BUILD)/entry.o
 
 $(BUILD)/kernel.o: kernel/kernel.c | $(BUILD)
 	$(CC) -target i386-unknown-none -ffreestanding \
@@ -31,7 +31,12 @@ $(BUILD)/keyboard.o: drivers/keyboard.c | $(BUILD)
 		-fno-stack-protector -fno-pic -fno-pie \
 		-m32 -c drivers/keyboard.c -o $(BUILD)/keyboard.o
 
-$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o
+$(BUILD)/mouse.o: drivers/mouse.c | $(BUILD)
+	$(CC) -target i386-unknown-none -ffreestanding \
+		-fno-stack-protector -fno-pic -fno-pie \
+		-m32 -c drivers/mouse.c -o $(BUILD)/mouse.o
+
+$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o $(BUILD)/mouse.o
 	$(LD) -flavor gnu \
 		-e _start \
 		-Ttext 0x1000 \
@@ -40,7 +45,8 @@ $(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o
 		-o $(BUILD)/kernel.bin \
 		$(BUILD)/entry.o \
 		$(BUILD)/kernel.o \
-		$(BUILD)/keyboard.o
+		$(BUILD)/keyboard.o \
+		$(BUILD)/mouse.o
 
 $(IMAGE): $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	dd if=/dev/zero of=$(IMAGE) bs=512 count=2880
