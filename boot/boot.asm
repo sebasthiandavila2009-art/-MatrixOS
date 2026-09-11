@@ -83,6 +83,20 @@ BITS 32
 protected_mode:
 
     ; Data segment
+    ; Protected mode reached
+    mov word [0xB8000], 0x074D
+    mov word [0xB8002], 0x0750
+    mov word [0xB8004], 0x074D
+    mov word [0xB8006], 0x074F
+    mov word [0xB8008], 0x0744
+    mov word [0xB800A], 0x0745
+    mov word [0xB800C], 0x074D
+    mov word [0xB800E], 0x074F
+    mov word [0xB8010], 0x0744
+    mov word [0xB8012], 0x0745
+
+    mov ax, 0x10
+    mov ds, ax
     mov ax, 0x10
     mov ds, ax
     mov es, ax
