@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.3
+; Version 2.4
 
 BITS 16
 ORG 0x7C00
@@ -23,11 +23,11 @@ start:
 
     ; --------------------------------
     ; Load MatrixOS kernel
-    ; Sector 2 and 3 -> physical 0x1000
+    ; 4 sectors -> physical 0x1000
     ; --------------------------------
 
     mov ah, 0x02
-    mov al, 0x02
+    mov al, 0x04
     mov ch, 0x00
     mov cl, 0x02
     mov dh, 0x00
@@ -54,8 +54,7 @@ start:
     or eax, 0x01
     mov cr0, eax
 
-    ; 16-bit far jump.
-    ; Target is below 64 KB.
+    ; Jump to protected mode
     jmp 0x08:protected_mode
 
 
@@ -101,7 +100,6 @@ BITS 32
 
 protected_mode:
 
-    ; Load data segment
     mov ax, 0x10
 
     mov ds, ax
@@ -110,20 +108,12 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Protected-mode stack
     mov esp, 0x90000
 
-    ; --------------------------------
-    ; Display P = protected mode
-    ; --------------------------------
-
+    ; Protected-mode checkpoint
     mov word [0xB8000], 0x0750
 
-    ; --------------------------------
     ; Jump to MatrixOS kernel
-    ; Kernel is loaded at 0x1000
-    ; --------------------------------
-
     jmp 0x08:0x1000
 
 
@@ -133,14 +123,10 @@ protected_mode:
 
 gdt_start:
 
-    ; Null descriptor
     dq 0
 
 gdt_code:
 
-    ; Base = 0
-    ; Limit = 4 GB
-    ; 32-bit executable/readable
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -150,9 +136,6 @@ gdt_code:
 
 gdt_data:
 
-    ; Base = 0
-    ; Limit = 4 GB
-    ; 32-bit writable
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -161,7 +144,6 @@ gdt_data:
     db 0x00
 
 gdt_end:
-
 
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
