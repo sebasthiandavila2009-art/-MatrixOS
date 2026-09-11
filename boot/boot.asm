@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.6 - Graphics + 5 Sector Kernel
+; Version 2.7 - Graphics + 7 Sector Kernel
 
 BITS 16
 ORG 0x7C00
@@ -23,11 +23,11 @@ start:
 
     ; --------------------------------
     ; Load MatrixOS kernel
-    ; 5 sectors -> physical 0x1000
+    ; 7 sectors -> physical 0x1000
     ; --------------------------------
 
     mov ah, 0x02
-    mov al, 0x05
+    mov al, 0x07
     mov ch, 0x00
     mov cl, 0x02
     mov dh, 0x00
