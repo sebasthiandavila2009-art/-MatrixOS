@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.7 - Protected Mode Transition
+; Version 1.8 - Stable Protected Mode Transition
 
 BITS 16
 ORG 0x7C00
@@ -19,7 +19,8 @@ start:
     mov si, boot_message
     call print_string
 
-    ; Load kernel: sectors 2-3 -> physical 0x1000
+    ; Load kernel from sectors 2-3
+    ; Physical address: 0x1000
     mov ah, 0x02
     mov al, 0x02
     mov ch, 0x00
@@ -47,9 +48,8 @@ start:
     or eax, 0x01
     mov cr0, eax
 
-    ; Explicit 32-bit far jump
-    db 0x66
-    jmp CODE_SEG:protected_mode
+    ; Far jump into 32-bit protected mode
+    jmp 0x08:protected_mode
 
 
 print_string:
@@ -60,6 +60,7 @@ print_string:
     mov ah, 0x0E
     mov bh, 0x00
     int 0x10
+
     jmp print_string
 
 .done:
@@ -80,21 +81,22 @@ BITS 32
 
 protected_mode:
 
-    ; Set protected-mode data segments
-    mov ax, DATA_SEG
+    ; Load protected-mode data segment
+    mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
 
+    ; Set stack
     mov esp, 0x90000
 
-    ; Checkpoint
+    ; Visible checkpoint
     mov word [0xB8000], 0x0750
 
-    ; Jump to kernel
-    jmp CODE_SEG:0x1000
+    ; Jump directly to kernel entry
+    jmp 0x08:0x1000
 
 
 gdt_start:
@@ -120,16 +122,15 @@ gdt_data:
 
 gdt_end:
 
+
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
-CODE_SEG equ gdt_code - gdt_start
-DATA_SEG equ gdt_data - gdt_start
-
 
 boot_drive:
     db 0
+
 
 boot_message:
     db "MATRIXOS: Bootloader OK", 13, 10, 0
