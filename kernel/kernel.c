@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 0.8 - Mouse Cursor
+// Version 0.9 - Polished Mouse Cursor
 
 extern void mouse_init(void);
 
@@ -42,21 +42,60 @@ void draw_screen(void)
 }
 
 /*
- * Draw a simple mouse cursor.
+ * Draw a polished arrow cursor.
+ *
+ * Black outline with a white center.
  */
 void draw_cursor(int x, int y)
 {
     /*
-     * Black cursor outline.
+     * Black outline.
+     *
+     * Shape:
+     *
+     * X
+     * XX
+     * X X
+     * X  X
+     * X   X
+     * X    X
+     * X     X
+     * X      X
+     * X       X
+     * X      XX
+     * XX   XX
+     * XX XX
+     * XXXX
      */
-    graphics_rectangle(x, y, 3, 12, 0);
-    graphics_rectangle(x, y, 10, 3, 0);
+    graphics_rectangle(x, y, 2, 18, 0);
+
+    graphics_rectangle(x + 2, y + 2, 2, 16, 0);
+    graphics_rectangle(x + 4, y + 4, 2, 14, 0);
+    graphics_rectangle(x + 6, y + 6, 2, 12, 0);
+    graphics_rectangle(x + 8, y + 8, 2, 10, 0);
+    graphics_rectangle(x + 10, y + 10, 2, 8, 0);
+    graphics_rectangle(x + 12, y + 12, 2, 8, 0);
 
     /*
-     * White cursor body.
+     * Cursor tip / right edge.
      */
-    graphics_rectangle(x + 2, y + 2, 2, 7, 15);
-    graphics_rectangle(x + 2, y + 2, 6, 2, 15);
+    graphics_rectangle(x + 14, y + 14, 2, 6, 0);
+    graphics_rectangle(x + 16, y + 16, 2, 4, 0);
+
+    /*
+     * Black lower edge.
+     */
+    graphics_rectangle(x + 8, y + 16, 10, 4, 0);
+
+    /*
+     * White cursor interior.
+     */
+    graphics_rectangle(x + 2, y + 2, 2, 12, 15);
+    graphics_rectangle(x + 4, y + 4, 2, 11, 15);
+    graphics_rectangle(x + 6, y + 6, 2, 10, 15);
+    graphics_rectangle(x + 8, y + 8, 2, 9, 15);
+    graphics_rectangle(x + 10, y + 10, 2, 7, 15);
+    graphics_rectangle(x + 12, y + 12, 2, 6, 15);
 }
 
 /*
@@ -78,8 +117,7 @@ void kernel_main(void)
         if (mouse_get_packet(&dx, &dy, &buttons))
         {
             /*
-             * Mouse Y movement is inverted:
-             * moving the mouse up produces positive Y data.
+             * Mouse Y movement is inverted.
              */
             cursor_x += dx;
             cursor_y -= dy;
@@ -90,14 +128,14 @@ void kernel_main(void)
             if (cursor_x < 0)
                 cursor_x = 0;
 
-            if (cursor_x > SCREEN_WIDTH - 10)
-                cursor_x = SCREEN_WIDTH - 10;
+            if (cursor_x > SCREEN_WIDTH - 18)
+                cursor_x = SCREEN_WIDTH - 18;
 
             if (cursor_y < 0)
                 cursor_y = 0;
 
-            if (cursor_y > SCREEN_HEIGHT - 12)
-                cursor_y = SCREEN_HEIGHT - 12;
+            if (cursor_y > SCREEN_HEIGHT - 20)
+                cursor_y = SCREEN_HEIGHT - 20;
 
             /*
              * Redraw the screen and cursor.
