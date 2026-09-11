@@ -15,11 +15,11 @@ start:
 
     mov [boot_drive], dl
 
-    ; Show bootloader message
+    ; Bootloader message
     mov si, boot_message
     call print_string
 
-    ; Load kernel from sectors 2 and 3
+    ; Load kernel: sectors 2 and 3
     mov ah, 0x02
     mov al, 2
     mov ch, 0
@@ -31,7 +31,7 @@ start:
 
     jc disk_error
 
-    ; Show kernel loaded message
+    ; Kernel loaded
     mov si, kernel_message
     call print_string
 
@@ -40,7 +40,7 @@ start:
     or al, 00000010b
     out 0x92, al
 
-    ; Load Global Descriptor Table
+    ; Load GDT
     lgdt [gdt_descriptor]
 
     ; Enter protected mode
@@ -48,7 +48,7 @@ start:
     or eax, 1
     mov cr0, eax
 
-    ; Far jump reloads CS and enters 32-bit protected mode
+    ; Far jump into 32-bit protected mode
     jmp 0x08:protected_mode
 
 
@@ -92,17 +92,17 @@ protected_mode:
     mov es, ax
     mov ss, ax
 
-    ; Set protected-mode stack
+    ; Set stack
     mov esp, 0x90000
 
-    ; Protected-mode diagnostic: MRIDE
+    ; Diagnostic message: MRIDE
     mov word [0xB8000], 0x074D
     mov word [0xB8002], 0x0752
     mov word [0xB8004], 0x0749
     mov word [0xB8006], 0x0744
     mov word [0xB8008], 0x0745
 
-    ; Jump to MatrixOS kernel
+    ; Jump to kernel
     jmp 0x08:0x1000
 
 
