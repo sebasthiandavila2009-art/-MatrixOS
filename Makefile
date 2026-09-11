@@ -1,5 +1,5 @@
 # MatrixOS Build System
-# Version 0.6
+# Version 0.7 - Graphics
 
 ASM = nasm
 CC = clang
@@ -36,7 +36,12 @@ $(BUILD)/mouse.o: drivers/mouse.c | $(BUILD)
 		-fno-stack-protector -fno-pic -fno-pie \
 		-m32 -c drivers/mouse.c -o $(BUILD)/mouse.o
 
-$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o $(BUILD)/mouse.o
+$(BUILD)/graphics.o: drivers/graphics.c | $(BUILD)
+	$(CC) -target i386-unknown-none -ffreestanding \
+		-fno-stack-protector -fno-pic -fno-pie \
+		-m32 -c drivers/graphics.c -o $(BUILD)/graphics.o
+
+$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o $(BUILD)/mouse.o $(BUILD)/graphics.o
 	$(LD) -flavor gnu \
 		-e _start \
 		-Ttext 0x1000 \
@@ -46,7 +51,8 @@ $(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o $(BU
 		$(BUILD)/entry.o \
 		$(BUILD)/kernel.o \
 		$(BUILD)/keyboard.o \
-		$(BUILD)/mouse.o
+		$(BUILD)/mouse.o \
+		$(BUILD)/graphics.o
 
 $(IMAGE): $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	dd if=/dev/zero of=$(IMAGE) bs=512 count=2880
