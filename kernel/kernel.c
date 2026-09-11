@@ -1,41 +1,55 @@
 // MatrixOS Kernel
-// Version 0.6
+// Version 0.7 - Graphics Test
 
 extern char keyboard_get_char(void);
 extern void mouse_init(void);
 
-volatile unsigned short *video = (unsigned short *)0xB8000;
-
-int cursor = 0;
+extern void graphics_clear(unsigned char color);
+extern void graphics_rectangle(
+    int x,
+    int y,
+    int width,
+    int height,
+    unsigned char color
+);
 
 void kernel_main(void)
 {
-    const char *message = "MATRIXOS v0.6 - MOUSE TEST";
+    /*
+     * Clear the graphics screen.
+     * Color 1 = blue.
+     */
+    graphics_clear(1);
 
-    /* Show that the kernel started */
-    for (int i = 0; message[i] != '\0'; i++)
-    {
-        video[cursor++] = (unsigned short)message[i] | 0x0700;
-    }
+    /*
+     * Draw a white rectangle in the center.
+     * Color 15 = white.
+     */
+    graphics_rectangle(
+        110,
+        70,
+        100,
+        60,
+        15
+    );
 
-    cursor++;
-
-    /* Initialize mouse after the message is visible */
+    /*
+     * Initialize the mouse.
+     */
     mouse_init();
 
-    /* Keyboard loop */
+    /*
+     * Keep MatrixOS running.
+     */
     while (1)
     {
         char key = keyboard_get_char();
 
-        if (key != 0)
-        {
-            video[cursor++] = (unsigned short)key | 0x0700;
-
-            if (cursor >= 2000)
-            {
-                cursor = 0;
-            }
-        }
+        /*
+         * Keyboard is still active.
+         * We don't display keys yet because
+         * we're testing graphics first.
+         */
+        (void)key;
     }
 }
