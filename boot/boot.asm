@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 0.4
+; Version 0.5
 
 BITS 16
 ORG 0x7C00
@@ -15,11 +15,11 @@ start:
 
     mov [boot_drive], dl
 
-    ; Bootloader message
+    ; Show bootloader message
     mov si, boot_message
     call print_string
 
-    ; Load kernel: sectors 2 and 3
+    ; Load kernel from sectors 2 and 3
     mov ah, 0x02
     mov al, 2
     mov ch, 0
@@ -31,7 +31,7 @@ start:
 
     jc disk_error
 
-    ; Kernel loaded
+    ; Show kernel loaded message
     mov si, kernel_message
     call print_string
 
@@ -40,7 +40,7 @@ start:
     or al, 00000010b
     out 0x92, al
 
-    ; Load GDT
+    ; Load Global Descriptor Table
     lgdt [gdt_descriptor]
 
     ; Enter protected mode
@@ -48,7 +48,7 @@ start:
     or eax, 1
     mov cr0, eax
 
-    ; Far jump into protected mode
+    ; Far jump reloads CS and enters 32-bit protected mode
     jmp 0x08:protected_mode
 
 
@@ -78,41 +78,37 @@ disk_error:
     jmp .hang
 
 
+; =========================================
+; 32-BIT PROTECTED MODE
+; =========================================
+
 BITS 32
 
 protected_mode:
 
-    ; Load data segments first
+    ; Load data segment
     mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov ss, ax
 
-    ; Set stack
+    ; Set protected-mode stack
     mov esp, 0x90000
 
-    ; Protected mode diagnostic
+    ; Protected-mode diagnostic: MRIDE
     mov word [0xB8000], 0x074D
     mov word [0xB8002], 0x0752
     mov word [0xB8004], 0x0749
     mov word [0xB8006], 0x0744
     mov word [0xB8008], 0x0745
 
-    ; Jump to kernel entry
-    jmp 0x08:0x1000
-    mov ax, 0x10
-    mov ds, ax
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov ss, ax
-
-    ; Stack
-    mov esp, 0x90000
-
-    ; Jump to kernel entry
+    ; Jump to MatrixOS kernel
     jmp 0x08:0x1000
 
+
+; =========================================
+; DATA
+; =========================================
 
 boot_drive db 0
 
@@ -126,9 +122,9 @@ error_message:
     db 'MATRIXOS: Disk error', 13, 10, 0
 
 
-; =========================
-; GDT
-; =========================
+; =========================================
+; GLOBAL DESCRIPTOR TABLE
+; =========================================
 
 gdt_start:
 
@@ -158,5 +154,6 @@ gdt_descriptor:
     dd gdt_start
 
 
+; Boot signature
 times 510 - ($ - $$) db 0
 dw 0xAA55
