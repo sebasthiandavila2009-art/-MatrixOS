@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 1.8 - Stable Cursor Redraw
+// Version 1.9 - Stable Cursor + Desktop Redraw
 
 extern void mouse_init(void);
 
@@ -21,8 +21,18 @@ extern void graphics_rectangle(
     unsigned char color
 );
 
+
+/*
+ * Screen
+ */
+
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
+
+
+/*
+ * Terminal
+ */
 
 #define TERMINAL_X       35
 #define TERMINAL_Y       25
@@ -32,30 +42,80 @@ extern void graphics_rectangle(
 #define TEXT_START_X     50
 #define TEXT_START_Y     60
 
+
+/*
+ * Mouse cursor
+ */
+
 #define CURSOR_WIDTH     20
 #define CURSOR_HEIGHT    22
 
+
+/*
+ * Terminal text
+ */
+
 #define MAX_TEXT 512
+
+
+/*
+ * Mouse position
+ */
 
 int cursor_x = 160;
 int cursor_y = 100;
 
+
+/*
+ * Terminal state
+ */
+
 int terminal_open = 0;
+
+
+/*
+ * Terminal text position
+ */
 
 int text_x = TEXT_START_X;
 int text_y = TEXT_START_Y;
+
+
+/*
+ * Terminal text buffer
+ */
 
 static char terminal_text[MAX_TEXT];
 
 int terminal_text_length = 0;
 
+
 /*
- * Saved pixels underneath the mouse cursor.
+ * Cursor background.
  */
 
 static unsigned char cursor_background[
     CURSOR_WIDTH * CURSOR_HEIGHT
 ];
+
+
+/*
+ * Cursor visibility state.
+ *
+ * 1 = cursor is currently drawn
+ * 0 = cursor is erased
+ */
+
+static int cursor_visible = 0;
+
+
+/*
+ * VGA framebuffer.
+ */
+
+volatile unsigned char *video_memory =
+    (volatile unsigned char *)0xA0000;
+
 
 /*
  * 5x7 font.
@@ -210,6 +270,10 @@ void draw_desktop(void)
 {
     graphics_clear(1);
 
+    /*
+     * Top bar.
+     */
+
     graphics_rectangle(
         0,
         0,
@@ -217,6 +281,10 @@ void draw_desktop(void)
         18,
         0
     );
+
+    /*
+     * Bottom taskbar.
+     */
 
     graphics_rectangle(
         0,
@@ -293,7 +361,7 @@ void draw_desktop(void)
 
 
 /*
- * Draw terminal.
+ * Draw Terminal.
  */
 
 void draw_terminal(void)
@@ -367,17 +435,7 @@ void draw_terminal(void)
 
 
 /*
- * Access VGA framebuffer.
- */
-
-volatile unsigned char *get_framebuffer(void)
-{
-    return (volatile unsigned char *)0xA0000;
-}
-
-
-/*
- * Save background underneath
+ * Save the pixels underneath
  * the mouse cursor.
  */
 
@@ -385,9 +443,6 @@ void cursor_save_background(void)
 {
     int x;
     int y;
-
-    volatile unsigned char *fb =
-        get_framebuffer();
 
     for (y = 0; y < CURSOR_HEIGHT; y++)
     {
@@ -404,7 +459,7 @@ void cursor_save_background(void)
                 cursor_background[
                     y * CURSOR_WIDTH + x
                 ] =
-                    fb[
+                    video_memory[
                         py * SCREEN_WIDTH + px
                     ];
             }
@@ -420,7 +475,8 @@ void cursor_save_background(void)
 
 
 /*
- * Restore previous cursor background.
+ * Restore the pixels underneath
+ * the mouse cursor.
  */
 
 void cursor_restore_background(void)
@@ -428,8 +484,12 @@ void cursor_restore_background(void)
     int x;
     int y;
 
-    volatile unsigned char *fb =
-        get_framebuffer();
+    /*
+     * Do not restore the cursor twice.
+     */
+
+    if (!cursor_visible)
+        return;
 
     for (y = 0; y < CURSOR_HEIGHT; y++)
     {
@@ -443,8 +503,444 @@ void cursor_restore_background(void)
                 py >= 0 &&
                 py < SCREEN_HEIGHT)
             {
-                fb[
+                video_memory[
                     py * SCREEN_WIDTH + px
                 ] =
                     cursor_background[
-                        y * CURSOR
+                        y * CURSOR_WIDTH + x
+                    ];
+            }
+        }
+    }
+
+    cursor_visible = 0;
+}
+
+
+/*
+ * Draw MatrixOS mouse cursor.
+ */
+
+void draw_cursor(void)
+{
+    int x = cursor_x;
+    int y = cursor_y;
+
+    /*
+     * Black outline.
+     */
+
+    graphics_rectangle(x, y, 2, 18, 0);
+    graphics_rectangle(x + 2, y + 2, 2, 16, 0);
+    graphics_rectangle(x + 4, y + 4, 2, 14, 0);
+    graphics_rectangle(x + 6, y + 6, 2, 12, 0);
+    graphics_rectangle(x + 8, y + 8, 2, 10, 0);
+    graphics_rectangle(x + 10, y + 10, 2, 8, 0);
+    graphics_rectangle(x + 12, y + 12, 2, 8, 0);
+    graphics_rectangle(x + 14, y + 14, 2, 6, 0);
+    graphics_rectangle(x + 16, y + 16, 2, 4, 0);
+
+    graphics_rectangle(
+        x + 8,
+        y + 16,
+        10,
+        4,
+        0
+    );
+
+    /*
+     * White interior.
+     */
+
+    graphics_rectangle(
+        x + 2,
+        y + 2,
+        2,
+        12,
+        15
+    );
+
+    graphics_rectangle(
+        x + 4,
+        y + 4,
+        2,
+        11,
+        15
+    );
+
+    graphics_rectangle(
+        x + 6,
+        y + 6,
+        2,
+        10,
+        15
+    );
+
+    graphics_rectangle(
+        x + 8,
+        y + 8,
+        2,
+        9,
+        15
+    );
+
+    graphics_rectangle(
+        x + 10,
+        y + 10,
+        2,
+        7,
+        15
+    );
+
+    graphics_rectangle(
+        x + 12,
+        y + 12,
+        2,
+        6,
+        15
+    );
+
+    cursor_visible = 1;
+}
+
+
+/*
+ * Erase cursor safely.
+ */
+
+void cursor_erase(void)
+{
+    cursor_restore_background();
+}
+
+
+/*
+ * Show cursor safely.
+ */
+
+void cursor_show(void)
+{
+    if (cursor_visible)
+        return;
+
+    cursor_save_background();
+    draw_cursor();
+}
+
+
+/*
+ * Redraw the complete MatrixOS screen.
+ */
+
+void redraw_screen(void)
+{
+    /*
+     * Erase cursor only if it
+     * is currently visible.
+     */
+
+    cursor_erase();
+
+    /*
+     * Draw the desktop.
+     */
+
+    draw_desktop();
+
+    /*
+     * Draw Terminal if open.
+     */
+
+    if (terminal_open)
+    {
+        draw_terminal();
+    }
+
+    /*
+     * Put cursor back on top.
+     */
+
+    cursor_show();
+}
+
+
+/*
+ * Check Terminal icon.
+ */
+
+int cursor_over_terminal(void)
+{
+    if (cursor_x >= 20 &&
+        cursor_x < 70 &&
+        cursor_y >= 40 &&
+        cursor_y < 80)
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+/*
+ * Check Terminal close button.
+ */
+
+int cursor_over_close(void)
+{
+    if (cursor_x >= 268 &&
+        cursor_x < 278 &&
+        cursor_y >= 29 &&
+        cursor_y < 39)
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+
+/*
+ * Open Terminal.
+ */
+
+void open_terminal(void)
+{
+    terminal_open = 1;
+
+    redraw_screen();
+}
+
+
+/*
+ * Close Terminal.
+ */
+
+void close_terminal(void)
+{
+    terminal_open = 0;
+
+    redraw_screen();
+}
+
+
+/*
+ * Add character.
+ */
+
+void add_terminal_character(char key)
+{
+    if (terminal_text_length >= MAX_TEXT - 1)
+        return;
+
+    terminal_text[
+        terminal_text_length
+    ] = key;
+
+    terminal_text_length++;
+}
+
+
+/*
+ * Handle keyboard.
+ */
+
+void handle_keyboard(void)
+{
+    char key;
+
+    key = keyboard_get_char();
+
+    if (key == 0)
+        return;
+
+    /*
+     * Backspace.
+     */
+
+    if (key == '\b')
+    {
+        if (terminal_text_length > 0)
+        {
+            terminal_text_length--;
+
+            redraw_screen();
+        }
+
+        return;
+    }
+
+    /*
+     * Enter.
+     */
+
+    if (key == '\n')
+    {
+        add_terminal_character('\n');
+
+        redraw_screen();
+
+        return;
+    }
+
+    /*
+     * Letters and spaces.
+     */
+
+    if ((key >= 'a' && key <= 'z') ||
+        (key >= 'A' && key <= 'Z') ||
+        key == ' ')
+    {
+        add_terminal_character(key);
+
+        redraw_screen();
+    }
+}
+
+
+/*
+ * MatrixOS kernel.
+ */
+
+void kernel_main(void)
+{
+    int dx;
+    int dy;
+
+    unsigned char buttons;
+    unsigned char old_buttons = 0;
+
+    /*
+     * Initialize mouse.
+     */
+
+    mouse_init();
+
+    /*
+     * Draw initial desktop.
+     */
+
+    draw_desktop();
+
+    /*
+     * Draw initial cursor.
+     */
+
+    cursor_show();
+
+    /*
+     * Main MatrixOS loop.
+     */
+
+    while (1)
+    {
+        /*
+         * Keyboard.
+         */
+
+        if (terminal_open)
+        {
+            handle_keyboard();
+        }
+
+        /*
+         * Mouse.
+         */
+
+        if (mouse_get_packet(
+                &dx,
+                &dy,
+                &buttons))
+        {
+            /*
+             * Remember whether this
+             * is a new left click.
+             */
+
+            int new_left_click =
+                ((buttons & 1) &&
+                 !(old_buttons & 1));
+
+            /*
+             * Remove old cursor.
+             */
+
+            cursor_erase();
+
+            /*
+             * Move cursor.
+             */
+
+            cursor_x += dx;
+            cursor_y -= dy;
+
+            /*
+             * Keep cursor inside screen.
+             */
+
+            if (cursor_x < 0)
+                cursor_x = 0;
+
+            if (cursor_x >
+                SCREEN_WIDTH - CURSOR_WIDTH)
+            {
+                cursor_x =
+                    SCREEN_WIDTH - CURSOR_WIDTH;
+            }
+
+            if (cursor_y < 0)
+                cursor_y = 0;
+
+            if (cursor_y >
+                SCREEN_HEIGHT - CURSOR_HEIGHT)
+            {
+                cursor_y =
+                    SCREEN_HEIGHT - CURSOR_HEIGHT;
+            }
+
+            /*
+             * Handle new left click.
+             */
+
+            if (new_left_click)
+            {
+                /*
+                 * Open Terminal.
+                 */
+
+                if (!terminal_open &&
+                    cursor_over_terminal())
+                {
+                    open_terminal();
+                }
+
+                /*
+                 * Close Terminal.
+                 */
+
+                else if (terminal_open &&
+                         cursor_over_close())
+                {
+                    close_terminal();
+                }
+            }
+
+            /*
+             * Remember current button state.
+             */
+
+            old_buttons = buttons;
+
+            /*
+             * If the click opened or closed
+             * a window, redraw_screen()
+             * already restored and displayed
+             * the cursor.
+             *
+             * Otherwise show the cursor here.
+             */
+
+            cursor_show();
+        }
+    }
+}
