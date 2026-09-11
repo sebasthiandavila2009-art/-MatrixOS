@@ -1,11 +1,12 @@
 ; MatrixOS Bootloader
-; Version 1.1
+; Version 1.2
 
 BITS 16
 ORG 0x7C00
 
 start:
     cli
+    cld
 
     ; Set up real-mode segments
     xor ax, ax
@@ -17,29 +18,34 @@ start:
     ; Save BIOS boot drive
     mov [boot_drive], dl
 
-    ; Display boot message
+    ; ----------------------------------------
+    ; Boot message
+    ; ----------------------------------------
+
     mov si, boot_message
     call print_string
 
     ; ----------------------------------------
     ; Load MatrixOS kernel
-    ; Kernel is located at sector 2
-    ; Kernel size currently fits in 2 sectors
+    ; Sector 2, two sectors
     ; Destination: 0x1000
     ; ----------------------------------------
 
-    mov ah, 0x02        ; BIOS read sectors
-    mov al, 0x02        ; Read 2 sectors
-    mov ch, 0x00        ; Cylinder 0
-    mov cl, 0x02        ; Sector 2
-    mov dh, 0x00        ; Head 0
+    mov ah, 0x02
+    mov al, 0x02
+    mov ch, 0x00
+    mov cl, 0x02
+    mov dh, 0x00
     mov dl, [boot_drive]
-    mov bx, 0x1000      ; Load kernel at 0x1000
+    mov bx, 0x1000
 
     int 0x13
     jc disk_error
 
-    ; Kernel loaded successfully
+    ; ----------------------------------------
+    ; Kernel loaded
+    ; ----------------------------------------
+
     mov si, kernel_message
     call print_string
 
@@ -52,20 +58,21 @@ start:
     out 0x92, al
 
     ; ----------------------------------------
-    ; Load Global Descriptor Table
+    ; Load GDT
+    ; NASM calculates the address automatically
     ; ----------------------------------------
 
     lgdt [gdt_descriptor]
 
     ; ----------------------------------------
-    ; Enter 32-bit protected mode
+    ; Enter protected mode
     ; ----------------------------------------
 
     mov eax, cr0
     or eax, 0x01
     mov cr0, eax
 
-    ; Far jump reloads CS with 32-bit code segment
+    ; Far jump into 32-bit protected mode
     jmp CODE_SEG:protected_mode
 
 
@@ -103,15 +110,15 @@ disk_error:
     jmp .hang
 
 
-; --------------------------------------------
-; 32-bit Protected Mode
-; --------------------------------------------
+; ============================================
+; 32-BIT PROTECTED MODE
+; ============================================
 
 BITS 32
 
 protected_mode:
 
-    ; Load data segment selector
+    ; Load data segment
     mov ax, DATA_SEG
     mov ds, ax
     mov es, ax
@@ -119,16 +126,16 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set 32-bit stack
+    ; Set protected-mode stack
     mov esp, 0x90000
 
     ; Jump to MatrixOS kernel
     jmp 0x1000
 
 
-; --------------------------------------------
-; Global Descriptor Table
-; --------------------------------------------
+; ============================================
+; GLOBAL DESCRIPTOR TABLE
+; ============================================
 
 gdt_start:
 
@@ -154,29 +161,37 @@ gdt_data:
 gdt_end:
 
 
+; GDT descriptor
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
 
+; Segment selectors
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
 
-; --------------------------------------------
-; Messages
-; --------------------------------------------
+; ============================================
+; DATA
+; ============================================
 
 boot_drive db 0
 
-boot_message db "MATRIXOS: Bootloader OK", 13, 10, 0
-kernel_message db "MATRIXOS: Kernel loaded", 13, 10, 0
-error_message db "MATRIXOS: Disk error", 13, 10, 0
+boot_message:
+    db "MATRIXOS: Bootloader OK", 13, 10, 0
+
+kernel_message:
+    db "MATRIXOS: Kernel loaded", 13, 10, 0
+
+error_message:
+    db "MATRIXOS: Disk error", 13, 10, 0
 
 
-; --------------------------------------------
-; Boot sector signature
-; --------------------------------------------
+; ============================================
+; BOOT SECTOR
+; ============================================
 
-TIMES 510-($-$$) DB 0
-DW 0xAA55
+times 510 - ($ - $$) db 0
+
+dw 0xAA55
