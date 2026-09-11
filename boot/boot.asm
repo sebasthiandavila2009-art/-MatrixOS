@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 0.5
+; Version 0.6
 
 BITS 16
 ORG 0x7C00
@@ -15,11 +15,11 @@ start:
 
     mov [boot_drive], dl
 
-    ; Bootloader message
+    ; Boot message
     mov si, boot_message
     call print_string
 
-    ; Load kernel: sectors 2 and 3
+    ; Load kernel from sectors 2 and 3
     mov ah, 0x02
     mov al, 2
     mov ch, 0
@@ -48,8 +48,11 @@ start:
     or eax, 1
     mov cr0, eax
 
-    ; Far jump into 32-bit protected mode
-    jmp 0x08:protected_mode
+    ; Explicit 32-bit far jump
+    db 0x66
+    db 0xEA
+    dd protected_mode
+    dw 0x08
 
 
 print_string:
@@ -79,23 +82,23 @@ disk_error:
 
 
 ; =========================================
-; 32-BIT PROTECTED MODE
+; PROTECTED MODE
 ; =========================================
 
 BITS 32
 
 protected_mode:
 
-    ; Load data segment
+    ; Load data segments
     mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov ss, ax
 
-    ; Set stack
+    ; Protected-mode stack
     mov esp, 0x90000
 
-    ; Diagnostic message: MRIDE
+    ; Diagnostic: MRIDE
     mov word [0xB8000], 0x074D
     mov word [0xB8002], 0x0752
     mov word [0xB8004], 0x0749
@@ -103,7 +106,9 @@ protected_mode:
     mov word [0xB8008], 0x0745
 
     ; Jump to kernel
-    jmp 0x08:0x1000
+    db 0xEA
+    dd 0x1000
+    dw 0x08
 
 
 ; =========================================
@@ -123,7 +128,7 @@ error_message:
 
 
 ; =========================================
-; GLOBAL DESCRIPTOR TABLE
+; GDT
 ; =========================================
 
 gdt_start:
