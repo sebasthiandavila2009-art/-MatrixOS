@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.5 - Protected Mode Diagnostic
+; Version 1.6 - Protected Mode Fixed
 
 BITS 16
 ORG 0x7C00
@@ -16,18 +16,13 @@ start:
 
     mov [boot_drive], dl
 
-    ; ----------------------------------------
     ; Boot message
-    ; ----------------------------------------
-
     mov si, boot_message
     call print_string
 
-    ; ----------------------------------------
     ; Load kernel
     ; Sector 2, two sectors
     ; Load to physical address 0x1000
-    ; ----------------------------------------
 
     mov ah, 0x02
     mov al, 0x02
@@ -43,29 +38,24 @@ start:
     mov si, kernel_message
     call print_string
 
-    ; ----------------------------------------
     ; Enable A20
-    ; ----------------------------------------
 
     in al, 0x92
     or al, 0x02
     out 0x92, al
 
-    ; ----------------------------------------
     ; Load GDT
-    ; ----------------------------------------
 
     lgdt [gdt_descriptor]
 
-    ; ----------------------------------------
     ; Enter protected mode
-    ; ----------------------------------------
 
     mov eax, cr0
     or eax, 0x01
     mov cr0, eax
 
-    ; Far jump reloads CS
+    ; Reload CS with protected-mode code segment
+
     jmp CODE_SEG:protected_mode
 
 
@@ -110,18 +100,9 @@ BITS 32
 
 protected_mode:
 
-    ; ----------------------------------------
-    ; FIRST CHECKPOINT
-    ;
-    ; If we see P on screen, protected mode
-    ; is working.
-    ; ----------------------------------------
-
-    mov word [0xB8000], 0x0750
-
-    ; ----------------------------------------
-    ; Now load data segments
-    ; ----------------------------------------
+    ; IMPORTANT:
+    ; Load protected-mode data segments BEFORE
+    ; accessing VGA memory.
 
     mov ax, DATA_SEG
 
@@ -131,13 +112,20 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set protected-mode stack
+    ; Protected-mode stack
+
     mov esp, 0x90000
 
-    ; ----------------------------------------
-    ; Jump to kernel
-    ; Kernel is loaded at physical 0x1000
-    ; ----------------------------------------
+    ; ========================================
+    ; PROTECTED MODE CHECKPOINT
+    ; ========================================
+    ; If we see P, protected mode is working.
+
+    mov word [0xB8000], 0x0750
+
+    ; ========================================
+    ; START KERNEL
+    ; ========================================
 
     jmp CODE_SEG:0x1000
 
