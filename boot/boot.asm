@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.4
+; Version 2.5 - Graphics Mode
 
 BITS 16
 ORG 0x7C00
@@ -39,6 +39,14 @@ start:
 
     mov si, kernel_message
     call print_string
+
+    ; --------------------------------
+    ; Enable VGA Mode 13h
+    ; 320x200, 256 colors
+    ; --------------------------------
+
+    mov ax, 0x0013
+    int 0x10
 
     ; --------------------------------
     ; Load GDT
@@ -109,9 +117,6 @@ protected_mode:
     mov ss, ax
 
     mov esp, 0x90000
-
-    ; Protected-mode checkpoint
-    mov word [0xB8000], 0x0750
 
     ; Jump to MatrixOS kernel
     jmp 0x08:0x1000
