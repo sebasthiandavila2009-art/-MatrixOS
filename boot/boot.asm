@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.8 - Stable Protected Mode Transition
+; Version 1.9 - Protected Mode Debug
 
 BITS 16
 ORG 0x7C00
@@ -19,8 +19,9 @@ start:
     mov si, boot_message
     call print_string
 
-    ; Load kernel from sectors 2-3
-    ; Physical address: 0x1000
+    ; Load kernel
+    ; Sector 2, 2 sectors
+    ; Destination: 0x1000
     mov ah, 0x02
     mov al, 0x02
     mov ch, 0x00
@@ -41,6 +42,7 @@ start:
     out 0x92, al
 
     ; Load GDT
+    cli
     lgdt [gdt_descriptor]
 
     ; Enable protected mode
@@ -48,8 +50,12 @@ start:
     or eax, 0x01
     mov cr0, eax
 
-    ; Far jump into 32-bit protected mode
-    jmp 0x08:protected_mode
+    ; DEBUG CHECKPOINT
+    ; If we see P, protected mode was enabled.
+    mov word [0xB8000], 0x0750
+
+    ; Explicit 32-bit far jump
+    jmp dword 0x08:protected_mode
 
 
 print_string:
@@ -81,7 +87,7 @@ BITS 32
 
 protected_mode:
 
-    ; Load protected-mode data segment
+    ; Protected-mode data segment
     mov ax, 0x10
     mov ds, ax
     mov es, ax
@@ -89,14 +95,15 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set stack
+    ; Protected-mode stack
     mov esp, 0x90000
 
-    ; Visible checkpoint
-    mov word [0xB8000], 0x0750
+    ; DEBUG CHECKPOINT
+    ; Change screen to P again after entering 32-bit mode.
+    mov word [0xB8000], 0x0751
 
-    ; Jump directly to kernel entry
-    jmp 0x08:0x1000
+    ; Jump to kernel
+    jmp dword 0x08:0x1000
 
 
 gdt_start:
