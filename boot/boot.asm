@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.9 - 9 Sector Kernel
+; Version 3.0 - 10 Sector Kernel
 
 BITS 16
 ORG 0x7C00
@@ -23,11 +23,11 @@ start:
 
     ; --------------------------------
     ; Load MatrixOS kernel
-    ; 9 sectors -> physical 0x1000
+    ; 10 sectors -> physical 0x1000
     ; --------------------------------
 
     mov ah, 0x02
-    mov al, 0x09
+    mov al, 0x0A
     mov ch, 0x00
     mov cl, 0x02
     mov dh, 0x00
@@ -42,7 +42,6 @@ start:
 
     ; --------------------------------
     ; Enable VGA Mode 13h
-    ; 320x200, 256 colors
     ; --------------------------------
 
     mov ax, 0x0013
