@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.3
+; Version 1.4
 
 BITS 16
 ORG 0x7C00
@@ -8,27 +8,18 @@ start:
     cli
     cld
 
-    ; Real-mode segments
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
 
-    ; Save BIOS drive
     mov [boot_drive], dl
 
-    ; Boot message
     mov si, boot_message
     call print_string
 
-    ; ----------------------------------------
-    ; Load kernel
-    ; Sector 2
-    ; 2 sectors
-    ; Load address: 0x1000
-    ; ----------------------------------------
-
+    ; Load kernel: 2 sectors from sector 2 to 0000:1000
     mov ah, 0x02
     mov al, 0x02
     mov ch, 0x00
@@ -40,28 +31,18 @@ start:
     int 0x13
     jc disk_error
 
-    ; Kernel loaded
     mov si, kernel_message
     call print_string
 
-    ; ----------------------------------------
     ; Enable A20
-    ; ----------------------------------------
-
     in al, 0x92
     or al, 0x02
     out 0x92, al
 
-    ; ----------------------------------------
     ; Load GDT
-    ; ----------------------------------------
-
     lgdt [gdt_descriptor]
 
-    ; ----------------------------------------
     ; Enter protected mode
-    ; ----------------------------------------
-
     mov eax, cr0
     or eax, 1
     mov cr0, eax
@@ -70,13 +51,8 @@ start:
     jmp CODE_SEG:protected_mode
 
 
-; ============================================
-; REAL MODE PRINT
-; ============================================
-
 print_string:
     lodsb
-
     test al, al
     jz .done
 
@@ -90,10 +66,6 @@ print_string:
     ret
 
 
-; ============================================
-; DISK ERROR
-; ============================================
-
 disk_error:
     mov si, error_message
     call print_string
@@ -105,14 +77,13 @@ disk_error:
 
 
 ; ============================================
-; 32-BIT PROTECTED MODE
+; PROTECTED MODE CHECKPOINT
 ; ============================================
 
 BITS 32
 
 protected_mode:
 
-    ; Load data segments
     mov ax, DATA_SEG
     mov ds, ax
     mov es, ax
@@ -120,16 +91,17 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Protected-mode stack
     mov esp, 0x90000
 
-    ; ----------------------------------------
-    ; IMPORTANT:
-    ; This is a FAR jump to absolute 0x1000.
-    ; The old "jmp 0x1000" was relative.
-    ; ----------------------------------------
+    ; Write "P" directly to VGA.
+    ; If this appears, protected mode is working.
+    mov word [0xB8000], 0x0750
 
-    jmp CODE_SEG:0x1000
+    ; Stop here for the diagnostic.
+.hang:
+    cli
+    hlt
+    jmp .hang
 
 
 ; ============================================
@@ -159,11 +131,9 @@ gdt_data:
 
 gdt_end:
 
-
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
-
 
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
