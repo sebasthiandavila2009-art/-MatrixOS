@@ -1,3 +1,6 @@
+; MatrixOS Bootloader
+; Version 2.3
+
 BITS 16
 ORG 0x7C00
 
@@ -11,13 +14,18 @@ start:
     mov ss, ax
     mov sp, 0x7C00
 
+    ; Save BIOS boot drive
     mov [boot_drive], dl
 
+    ; Boot message
     mov si, boot_message
     call print_string
 
-    ; Load kernel from sectors 2-3
-    ; Destination: physical 0x1000
+    ; --------------------------------
+    ; Load MatrixOS kernel
+    ; Sector 2 and 3 -> physical 0x1000
+    ; --------------------------------
+
     mov ah, 0x02
     mov al, 0x02
     mov ch, 0x00
@@ -32,26 +40,32 @@ start:
     mov si, kernel_message
     call print_string
 
-    ; Enable A20
-    in al, 0x92
-    or al, 0x02
-    out 0x92, al
-
+    ; --------------------------------
     ; Load GDT
+    ; --------------------------------
+
     lgdt [gdt_descriptor]
 
+    ; --------------------------------
     ; Enable protected mode
+    ; --------------------------------
+
     mov eax, cr0
     or eax, 0x01
     mov cr0, eax
 
-    ; Far jump into protected mode.
-    ; The destination is below 64 KB, so a 16-bit offset is valid.
+    ; 16-bit far jump.
+    ; Target is below 64 KB.
     jmp 0x08:protected_mode
 
 
+; --------------------------------
+; BIOS text output
+; --------------------------------
+
 print_string:
     lodsb
+
     test al, al
     jz .done
 
@@ -65,6 +79,10 @@ print_string:
     ret
 
 
+; --------------------------------
+; Disk error
+; --------------------------------
+
 disk_error:
     mov si, error_message
     call print_string
@@ -75,34 +93,54 @@ disk_error:
     jmp .hang
 
 
+; ================================================
+; 32-bit Protected Mode
+; ================================================
+
 BITS 32
 
 protected_mode:
 
-    ; Load protected-mode data segment
+    ; Load data segment
     mov ax, 0x10
+
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
 
-    ; Set protected-mode stack
+    ; Protected-mode stack
     mov esp, 0x90000
 
-    ; Show P on VGA
-    mov eax, 0x07500050
-    mov dword [0xB8000], eax
+    ; --------------------------------
+    ; Display P = protected mode
+    ; --------------------------------
 
-    ; Jump to kernel
+    mov word [0xB8000], 0x0750
+
+    ; --------------------------------
+    ; Jump to MatrixOS kernel
+    ; Kernel is loaded at 0x1000
+    ; --------------------------------
+
     jmp 0x08:0x1000
 
 
+; ================================================
+; Global Descriptor Table
+; ================================================
+
 gdt_start:
 
+    ; Null descriptor
     dq 0
 
 gdt_code:
+
+    ; Base = 0
+    ; Limit = 4 GB
+    ; 32-bit executable/readable
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -111,6 +149,10 @@ gdt_code:
     db 0x00
 
 gdt_data:
+
+    ; Base = 0
+    ; Limit = 4 GB
+    ; 32-bit writable
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -126,6 +168,10 @@ gdt_descriptor:
     dd gdt_start
 
 
+; ================================================
+; Variables / Messages
+; ================================================
+
 boot_drive:
     db 0
 
@@ -139,5 +185,7 @@ error_message:
     db "MATRIXOS: Disk error", 13, 10, 0
 
 
+; Boot sector must be exactly 512 bytes
 times 510 - ($ - $$) db 0
+
 dw 0xAA55
