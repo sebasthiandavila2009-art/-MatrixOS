@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 0.9 - Polished Mouse Cursor
+// Version 1.0 - First GUI Interaction
 
 extern void mouse_init(void);
 
@@ -22,50 +22,61 @@ extern void graphics_rectangle(
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
 
+#define BUTTON_X      110
+#define BUTTON_Y      70
+#define BUTTON_WIDTH  100
+#define BUTTON_HEIGHT 60
+
 int cursor_x = 160;
 int cursor_y = 100;
 
+int button_pressed = 0;
+
 /*
- * Draw the MatrixOS test screen.
+ * Draw the main MatrixOS screen.
  */
 void draw_screen(void)
 {
     graphics_clear(1);
 
-    graphics_rectangle(
-        110,
-        70,
-        100,
-        60,
-        15
-    );
+    /*
+     * Draw GUI button.
+     */
+    if (button_pressed)
+    {
+        /*
+         * Button becomes green when clicked.
+         */
+        graphics_rectangle(
+            BUTTON_X,
+            BUTTON_Y,
+            BUTTON_WIDTH,
+            BUTTON_HEIGHT,
+            10
+        );
+    }
+    else
+    {
+        /*
+         * Normal white button.
+         */
+        graphics_rectangle(
+            BUTTON_X,
+            BUTTON_Y,
+            BUTTON_WIDTH,
+            BUTTON_HEIGHT,
+            15
+        );
+    }
 }
 
 /*
- * Draw a polished arrow cursor.
- *
- * Black outline with a white center.
+ * Draw the MatrixOS mouse cursor.
  */
 void draw_cursor(int x, int y)
 {
     /*
-     * Black outline.
-     *
-     * Shape:
-     *
-     * X
-     * XX
-     * X X
-     * X  X
-     * X   X
-     * X    X
-     * X     X
-     * X      X
-     * X       X
-     * X      XX
-     * XX   XX
-     * XX XX
-     * XXXX
+     * Black cursor outline.
      */
     graphics_rectangle(x, y, 2, 18, 0);
 
@@ -76,15 +87,9 @@ void draw_cursor(int x, int y)
     graphics_rectangle(x + 10, y + 10, 2, 8, 0);
     graphics_rectangle(x + 12, y + 12, 2, 8, 0);
 
-    /*
-     * Cursor tip / right edge.
-     */
     graphics_rectangle(x + 14, y + 14, 2, 6, 0);
     graphics_rectangle(x + 16, y + 16, 2, 4, 0);
 
-    /*
-     * Black lower edge.
-     */
     graphics_rectangle(x + 8, y + 16, 10, 4, 0);
 
     /*
@@ -96,6 +101,22 @@ void draw_cursor(int x, int y)
     graphics_rectangle(x + 8, y + 8, 2, 9, 15);
     graphics_rectangle(x + 10, y + 10, 2, 7, 15);
     graphics_rectangle(x + 12, y + 12, 2, 6, 15);
+}
+
+/*
+ * Check whether the cursor is inside the button.
+ */
+int cursor_over_button(void)
+{
+    if (cursor_x >= BUTTON_X &&
+        cursor_x < BUTTON_X + BUTTON_WIDTH &&
+        cursor_y >= BUTTON_Y &&
+        cursor_y < BUTTON_Y + BUTTON_HEIGHT)
+    {
+        return 1;
+    }
+
+    return 0;
 }
 
 /*
@@ -117,7 +138,7 @@ void kernel_main(void)
         if (mouse_get_packet(&dx, &dy, &buttons))
         {
             /*
-             * Mouse Y movement is inverted.
+             * Update cursor position.
              */
             cursor_x += dx;
             cursor_y -= dy;
@@ -138,12 +159,21 @@ void kernel_main(void)
                 cursor_y = SCREEN_HEIGHT - 20;
 
             /*
-             * Redraw the screen and cursor.
+             * Left mouse button pressed.
+             */
+            if (buttons & 0x01)
+            {
+                if (cursor_over_button())
+                {
+                    button_pressed = 1;
+                }
+            }
+
+            /*
+             * Redraw screen and cursor.
              */
             draw_screen();
             draw_cursor(cursor_x, cursor_y);
-
-            (void)buttons;
         }
     }
 }
