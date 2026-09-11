@@ -1,9 +1,9 @@
 // MatrixOS PS/2 Mouse Driver
-// Version 0.3 - Mouse Cursor
+// Version 0.4 - Fixed Mouse Input
 
-#define MOUSE_DATA_PORT    0x60
-#define MOUSE_STATUS_PORT  0x64
-#define MOUSE_COMMAND_PORT 0x64
+#define MOUSE_DATA_PORT     0x60
+#define MOUSE_STATUS_PORT   0x64
+#define MOUSE_COMMAND_PORT  0x64
 
 static inline unsigned char inb(unsigned short port)
 {
@@ -27,6 +27,9 @@ static inline void outb(unsigned short port, unsigned char value)
     );
 }
 
+/*
+ * Wait until the controller is ready to receive a command.
+ */
 static int mouse_wait_write(void)
 {
     unsigned int timeout = 100000;
@@ -40,6 +43,30 @@ static int mouse_wait_write(void)
     return 0;
 }
 
+/*
+ * Wait for normal controller data.
+ *
+ * Used for reading the controller configuration byte.
+ */
+static int controller_wait_read(void)
+{
+    unsigned int timeout = 100000;
+
+    while (timeout--)
+    {
+        if (inb(MOUSE_STATUS_PORT) & 1)
+            return 1;
+    }
+
+    return 0;
+}
+
+/*
+ * Wait for mouse data specifically.
+ *
+ * Bit 0 = output buffer contains data
+ * Bit 5 = data came from the mouse
+ */
 static int mouse_wait_read(void)
 {
     unsigned int timeout = 100000;
@@ -55,11 +82,18 @@ static int mouse_wait_read(void)
     return 0;
 }
 
+/*
+ * Send a command to the mouse.
+ */
 static int mouse_write(unsigned char value)
 {
     if (!mouse_wait_write())
         return 0;
 
+    /*
+     * Tell the PS/2 controller that the next byte
+     * should be sent to the mouse.
+     */
     outb(MOUSE_COMMAND_PORT, 0xD4);
 
     if (!mouse_wait_write())
@@ -70,6 +104,9 @@ static int mouse_write(unsigned char value)
     return 1;
 }
 
+/*
+ * Read one byte from the mouse.
+ */
 static int mouse_read(unsigned char *value)
 {
     if (!mouse_wait_read())
@@ -80,33 +117,55 @@ static int mouse_read(unsigned char *value)
     return 1;
 }
 
+/*
+ * Initialize the PS/2 mouse.
+ */
 void mouse_init(void)
 {
     unsigned char status;
     unsigned char response;
 
-    /* Enable PS/2 auxiliary mouse device. */
+    /*
+     * Enable the PS/2 auxiliary device.
+     */
     if (!mouse_wait_write())
         return;
 
     outb(MOUSE_COMMAND_PORT, 0xA8);
 
-    /* Read controller configuration. */
+    /*
+     * Ask the controller for its configuration byte.
+     */
     if (!mouse_wait_write())
         return;
 
     outb(MOUSE_COMMAND_PORT, 0x20);
 
-    if (!mouse_read(&status))
+    /*
+     * IMPORTANT:
+     * This is controller data, NOT mouse data.
+     */
+    if (!controller_wait_read())
         return;
 
-    /* Enable mouse IRQ bit. */
+    status = inb(MOUSE_DATA_PORT);
+
+    /*
+     * Enable mouse IRQ.
+     *
+     * We are polling instead of using interrupts,
+     * but leaving the mouse enabled is still correct.
+     */
     status |= 0x02;
 
-    /* Enable mouse clock. */
+    /*
+     * Enable the mouse clock.
+     */
     status &= ~0x20;
 
-    /* Write controller configuration. */
+    /*
+     * Write the controller configuration back.
+     */
     if (!mouse_wait_write())
         return;
 
@@ -117,13 +176,17 @@ void mouse_init(void)
 
     outb(MOUSE_DATA_PORT, status);
 
-    /* Set mouse defaults. */
+    /*
+     * Set mouse defaults.
+     */
     if (mouse_write(0xF6))
     {
         mouse_read(&response);
     }
 
-    /* Enable mouse data reporting. */
+    /*
+     * Enable mouse movement reporting.
+     */
     if (mouse_write(0xF4))
     {
         mouse_read(&response);
@@ -134,10 +197,13 @@ void mouse_init(void)
  * Read a complete 3-byte PS/2 mouse packet.
  *
  * Returns:
- *   1 = packet received
- *   0 = no packet available
+ *   1 = complete packet received
+ *   0 = no complete packet yet
  */
-int mouse_get_packet(int *dx, int *dy, unsigned char *buttons)
+int mouse_get_packet(
+    int *dx,
+    int *dy,
+    unsigned char *buttons)
 {
     static unsigned char packet[3];
     static int packet_index = 0;
@@ -147,8 +213,24 @@ int mouse_get_packet(int *dx, int *dy, unsigned char *buttons)
     if (!mouse_read(&value))
         return 0;
 
+    /*
+     * The first byte of a valid PS/2 packet
+     * always has bit 3 set.
+     *
+     * Use this to recover synchronization if
+     * we ever start reading in the middle of a packet.
+     */
+    if (packet_index == 0)
+    {
+        if ((value & 0x08) == 0)
+            return 0;
+    }
+
     packet[packet_index++] = value;
 
+    /*
+     * Need all three bytes.
+     */
     if (packet_index < 3)
         return 0;
 
@@ -156,6 +238,7 @@ int mouse_get_packet(int *dx, int *dy, unsigned char *buttons)
 
     /*
      * First byte:
+     *
      * bit 0 = left button
      * bit 1 = right button
      * bit 2 = middle button
@@ -168,11 +251,14 @@ int mouse_get_packet(int *dx, int *dy, unsigned char *buttons)
 
     *buttons = packet[0] & 0x07;
 
+    /*
+     * Convert movement bytes from signed 8-bit values.
+     */
     *dx = (int)(signed char)packet[1];
     *dy = (int)(signed char)packet[2];
 
     /*
-     * Ignore packets with overflow.
+     * Ignore overflow packets.
      */
     if (packet[0] & 0xC0)
     {
