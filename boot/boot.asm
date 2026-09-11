@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 0.9
+; Version 1.0
 
 BITS 16
 ORG 0x7C00
@@ -15,11 +15,11 @@ start:
 
     mov [boot_drive], dl
 
-    ; Print boot message
+    ; Bootloader message
     mov si, boot_message
     call print_string
 
-    ; Load kernel
+    ; Load kernel: 2 sectors starting at sector 2
     mov ah, 0x02
     mov al, 2
     mov ch, 0
@@ -31,7 +31,7 @@ start:
 
     jc disk_error
 
-    ; Print kernel loaded message
+    ; Kernel loaded
     mov si, kernel_message
     call print_string
 
@@ -43,12 +43,12 @@ start:
     ; Load GDT
     lgdt [gdt_descriptor]
 
-    ; Enable protected mode
+    ; Enter protected mode
     mov eax, cr0
     or eax, 1
     mov cr0, eax
 
-    ; Far jump into protected mode
+    ; 32-bit far jump
     db 0x66
     db 0xEA
     dd protected_mode
@@ -82,14 +82,14 @@ disk_error:
 
 
 ; =========================================
-; PROTECTED MODE
+; 32-BIT PROTECTED MODE
 ; =========================================
 
 BITS 32
 
 protected_mode:
 
-    ; Load data segments
+    ; Load data segment
     mov ax, 0x10
     mov ds, ax
     mov es, ax
@@ -98,34 +98,18 @@ protected_mode:
     ; Protected-mode stack
     mov esp, 0x90000
 
-    ; Write MATRIXOS directly to VGA memory
+    ; Write MATRIXOS to VGA memory
     mov edi, 0xB8000
 
-    mov ax, 0x074D
-    mov [edi + 0], ax
+    mov word [edi + 0],  0x074D
+    mov word [edi + 2],  0x0752
+    mov word [edi + 4],  0x0749
+    mov word [edi + 6],  0x0758
+    mov word [edi + 8],  0x074F
+    mov word [edi + 10], 0x0753
+    mov word [edi + 12], 0x074F
+    mov word [edi + 14], 0x0753
 
-    mov ax, 0x0752
-    mov [edi + 2], ax
-
-    mov ax, 0x0749
-    mov [edi + 4], ax
-
-    mov ax, 0x0758
-    mov [edi + 6], ax
-
-    mov ax, 0x074F
-    mov [edi + 8], ax
-
-    mov ax, 0x0753
-    mov [edi + 10], ax
-
-    mov ax, 0x074F
-    mov [edi + 12], ax
-
-    mov ax, 0x0753
-    mov [edi + 14], ax
-
-    ; Stay here
 .hang:
     cli
     hlt
@@ -178,13 +162,12 @@ gdt_end:
 
 
 ; =========================================
-; GDT DESCRIPTOR
+; GDTR
 ; =========================================
 
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
-    dw gdt_start
-    dw 0
+    dd gdt_start
 
 
 ; =========================================
