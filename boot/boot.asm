@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.0 - Protected Mode Transition
+; Version 2.1 - Protected Mode Diagnostic
 
 BITS 16
 ORG 0x7C00
@@ -19,8 +19,7 @@ start:
     mov si, boot_message
     call print_string
 
-    ; Load kernel from sector 2
-    ; Load 2 sectors to physical address 0x1000
+    ; Load kernel: sectors 2-3 -> 0x1000
     mov ah, 0x02
     mov al, 0x02
     mov ch, 0x00
@@ -35,21 +34,27 @@ start:
     mov si, kernel_message
     call print_string
 
-    ; Enable A20
+    ; A20
     in al, 0x92
     or al, 0x02
     out 0x92, al
 
-    ; Load GDT
+    ; GDT
     lgdt [gdt_descriptor]
+
+    ; REAL-MODE CHECKPOINT
+    ; R = reached protected-mode setup
+    mov word [0xB8000], 0x0752
 
     ; Enable protected mode
     mov eax, cr0
-    or eax, 0x01
+    or eax, 1
     mov cr0, eax
 
-    ; Far jump into protected mode
-    jmp 0x08:protected_mode
+    ; FAR JUMP
+    db 0xEA
+    dw protected_mode
+    dw 0x0008
 
 
 print_string:
@@ -58,7 +63,7 @@ print_string:
     jz .done
 
     mov ah, 0x0E
-    mov bh, 0x00
+    mov bh, 0
     int 0x10
 
     jmp print_string
@@ -81,7 +86,7 @@ BITS 32
 
 protected_mode:
 
-    ; Load protected-mode data segment
+    ; Protected-mode data segment
     mov ax, 0x10
     mov ds, ax
     mov es, ax
@@ -89,11 +94,10 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set protected-mode stack
     mov esp, 0x90000
 
-    ; PROTECTED MODE CHECKPOINT
-    ; Display P at top-left
+    ; PROTECTED-MODE CHECKPOINT
+    ; P = successfully entered protected mode
     mov word [0xB8000], 0x0750
 
     ; Jump to kernel
@@ -102,7 +106,6 @@ protected_mode:
 
 gdt_start:
 
-gdt_null:
     dq 0
 
 gdt_code:
