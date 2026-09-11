@@ -1,5 +1,5 @@
 // MatrixOS PS/2 Mouse Driver
-// Version 0.1
+// Version 0.2
 
 #define MOUSE_DATA_PORT    0x60
 #define MOUSE_STATUS_PORT  0x64
@@ -27,87 +27,118 @@ static inline void outb(unsigned short port, unsigned char value)
     );
 }
 
-static void mouse_wait(unsigned char type)
+/* Wait for the controller input buffer to become empty. */
+static int mouse_wait_write(void)
 {
     unsigned int timeout = 100000;
 
-    if (type == 0)
+    while (timeout--)
     {
-        while (timeout--)
-        {
-            if (inb(MOUSE_STATUS_PORT) & 1)
-                return;
-        }
+        if ((inb(MOUSE_STATUS_PORT) & 2) == 0)
+            return 1;
     }
-    else
-    {
-        while (timeout--)
-        {
-            if (!(inb(MOUSE_STATUS_PORT) & 2))
-                return;
-        }
-    }
+
+    return 0;
 }
 
-static void mouse_write(unsigned char value)
+/* Wait for data from the controller. */
+static int mouse_wait_read(void)
 {
-    mouse_wait(1);
+    unsigned int timeout = 100000;
+
+    while (timeout--)
+    {
+        if (inb(MOUSE_STATUS_PORT) & 1)
+            return 1;
+    }
+
+    return 0;
+}
+
+static int mouse_write(unsigned char value)
+{
+    if (!mouse_wait_write())
+        return 0;
 
     outb(MOUSE_COMMAND_PORT, 0xD4);
 
-    mouse_wait(1);
+    if (!mouse_wait_write())
+        return 0;
 
     outb(MOUSE_DATA_PORT, value);
+
+    return 1;
 }
 
-static unsigned char mouse_read(void)
+static int mouse_read(unsigned char *value)
 {
-    mouse_wait(0);
-    return inb(MOUSE_DATA_PORT);
+    if (!mouse_wait_read())
+        return 0;
+
+    *value = inb(MOUSE_DATA_PORT);
+    return 1;
 }
 
 void mouse_init(void)
 {
     unsigned char status;
+    unsigned char response;
 
-    /* Enable the auxiliary mouse device */
-    mouse_wait(1);
+    /* Enable the PS/2 auxiliary mouse device. */
+    if (!mouse_wait_write())
+        return;
+
     outb(MOUSE_COMMAND_PORT, 0xA8);
 
-    /* Read controller configuration byte */
-    mouse_wait(1);
+    /* Read controller configuration byte. */
+    if (!mouse_wait_write())
+        return;
+
     outb(MOUSE_COMMAND_PORT, 0x20);
 
-    status = mouse_read();
+    if (!mouse_read(&status))
+        return;
 
-    /* Enable mouse interrupts */
+    /* Enable mouse IRQ bit. */
     status |= 0x02;
 
-    /* Enable mouse clock */
+    /* Enable mouse clock. */
     status &= ~0x20;
 
-    mouse_wait(1);
+    /* Write controller configuration byte. */
+    if (!mouse_wait_write())
+        return;
+
     outb(MOUSE_COMMAND_PORT, 0x60);
 
-    mouse_wait(1);
+    if (!mouse_wait_write())
+        return;
+
     outb(MOUSE_DATA_PORT, status);
 
-    /* Tell the mouse to use its default settings */
-    mouse_write(0xF6);
-    mouse_read();
+    /* Set mouse defaults. */
+    if (mouse_write(0xF6))
+    {
+        mouse_read(&response);
+    }
 
-    /* Enable mouse data reporting */
-    mouse_write(0xF4);
-    mouse_read();
+    /* Enable mouse data reporting. */
+    if (mouse_write(0xF4))
+    {
+        mouse_read(&response);
+    }
 }
 
 /*
- * Returns one mouse packet byte.
- *
- * This first version is intentionally simple.
- * Interrupt-driven mouse input will be added later.
+ * Read one byte from the mouse.
+ * Returns 0 if no data is currently available.
  */
 unsigned char mouse_get_byte(void)
 {
-    return mouse_read();
+    unsigned char value;
+
+    if (!mouse_read(&value))
+        return 0;
+
+    return value;
 }
