@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 1.3 - Terminal Keyboard Input
+// Version 1.4 - Terminal Text Renderer
 
 extern void mouse_init(void);
 
@@ -24,10 +24,14 @@ extern void graphics_rectangle(
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
 
-#define TERMINAL_X       35
-#define TERMINAL_Y       25
-#define TERMINAL_WIDTH   250
-#define TERMINAL_HEIGHT  140
+#define TERMINAL_X 35
+#define TERMINAL_Y 25
+#define TERMINAL_WIDTH 250
+#define TERMINAL_HEIGHT 140
+
+#define FONT_SCALE 1
+#define FONT_WIDTH 5
+#define FONT_HEIGHT 7
 
 int cursor_x = 160;
 int cursor_y = 100;
@@ -38,22 +42,186 @@ int text_x = 50;
 int text_y = 60;
 
 /*
- * Draw MatrixOS desktop.
+ * Simple 5x7 font.
+ */
+unsigned char font_char(char c, int row)
+{
+    static const unsigned char font[][7] =
+    {
+        /* A */
+        {14,17,17,31,17,17,17},
+
+        /* B */
+        {30,17,17,30,17,17,30},
+
+        /* C */
+        {14,17,16,16,16,17,14},
+
+        /* D */
+        {30,17,17,17,17,17,30},
+
+        /* E */
+        {31,16,16,30,16,16,31},
+
+        /* F */
+        {31,16,16,30,16,16,16},
+
+        /* G */
+        {14,17,16,23,17,17,15},
+
+        /* H */
+        {17,17,17,31,17,17,17},
+
+        /* I */
+        {31,4,4,4,4,4,31},
+
+        /* J */
+        {7,2,2,2,18,18,12},
+
+        /* K */
+        {17,18,20,24,20,18,17},
+
+        /* L */
+        {16,16,16,16,16,16,31},
+
+        /* M */
+        {17,27,21,21,17,17,17},
+
+        /* N */
+        {17,25,21,19,17,17,17},
+
+        /* O */
+        {14,17,17,17,17,17,14},
+
+        /* P */
+        {30,17,17,30,16,16,16},
+
+        /* Q */
+        {14,17,17,17,21,18,13},
+
+        /* R */
+        {30,17,17,30,20,18,17},
+
+        /* S */
+        {15,16,16,14,1,1,30},
+
+        /* T */
+        {31,4,4,4,4,4,4},
+
+        /* U */
+        {17,17,17,17,17,17,14},
+
+        /* V */
+        {17,17,17,17,17,10,4},
+
+        /* W */
+        {17,17,17,21,21,21,10},
+
+        /* X */
+        {17,17,10,4,10,17,17},
+
+        /* Y */
+        {17,17,10,4,4,4,4},
+
+        /* Z */
+        {31,1,2,4,8,16,31}
+    };
+
+    if (c >= 'a' && c <= 'z')
+        c -= 32;
+
+    if (c < 'A' || c > 'Z')
+        return 0;
+
+    return font_char_data(font, c - 'A', row);
+}
+
+/*
+ * Helper for font lookup.
+ */
+unsigned char font_char_data(
+    const unsigned char font[][7],
+    int index,
+    int row
+)
+{
+    return font[index][row];
+}
+
+/*
+ * Draw a character.
+ */
+void draw_character(char c)
+{
+    int row;
+    int col;
+
+    if (c == ' ')
+    {
+        text_x += 6;
+        return;
+    }
+
+    if (c < 'A' || c > 'Z')
+    {
+        if (c >= 'a' && c <= 'z')
+            c -= 32;
+        else
+            return;
+    }
+
+    /*
+     * Use a compact built-in pattern.
+     */
+    for (row = 0; row < 7; row++)
+    {
+        unsigned char pattern;
+
+        pattern = font_char(c, row);
+
+        for (col = 0; col < 5; col++)
+        {
+            if (pattern & (1 << (4 - col)))
+            {
+                graphics_rectangle(
+                    text_x + col,
+                    text_y + row,
+                    1,
+                    1,
+                    15
+                );
+            }
+        }
+    }
+
+    text_x += 6;
+
+    if (text_x > 265)
+    {
+        text_x = 50;
+        text_y += 10;
+    }
+
+    if (text_y > 145)
+    {
+        text_x = 50;
+        text_y = 60;
+    }
+}
+
+/*
+ * Draw desktop.
  */
 void draw_desktop(void)
 {
     graphics_clear(1);
 
-    /* Top bar */
     graphics_rectangle(
-        0,
-        0,
-        SCREEN_WIDTH,
-        18,
+        0, 0,
+        SCREEN_WIDTH, 18,
         0
     );
 
-    /* Taskbar */
     graphics_rectangle(
         0,
         SCREEN_HEIGHT - 16,
@@ -64,63 +232,49 @@ void draw_desktop(void)
 
     /* Terminal */
     graphics_rectangle(
-        20,
-        40,
-        50,
-        40,
+        20, 40,
+        50, 40,
         15
     );
 
     /* Files */
     graphics_rectangle(
-        90,
-        40,
-        50,
-        40,
+        90, 40,
+        50, 40,
         15
     );
 
     /* Settings */
     graphics_rectangle(
-        160,
-        40,
-        50,
-        40,
+        160, 40,
+        50, 40,
         15
     );
 
-    /* Icon details */
     graphics_rectangle(
-        28,
-        50,
-        34,
-        4,
+        28, 50,
+        34, 4,
         0
     );
 
     graphics_rectangle(
-        98,
-        50,
-        34,
-        4,
+        98, 50,
+        34, 4,
         0
     );
 
     graphics_rectangle(
-        168,
-        50,
-        34,
-        4,
+        168, 50,
+        34, 4,
         0
     );
 }
 
 /*
- * Draw Terminal window.
+ * Draw terminal window.
  */
 void draw_terminal(void)
 {
-    /* Window */
     graphics_rectangle(
         TERMINAL_X,
         TERMINAL_Y,
@@ -129,7 +283,6 @@ void draw_terminal(void)
         0
     );
 
-    /* Title bar */
     graphics_rectangle(
         TERMINAL_X,
         TERMINAL_Y,
@@ -138,38 +291,32 @@ void draw_terminal(void)
         15
     );
 
-    /* Close button */
     graphics_rectangle(
-        268,
-        29,
-        10,
-        10,
+        268, 29,
+        10, 10,
         4
     );
 
-    /* Terminal screen */
     graphics_rectangle(
-        45,
-        50,
-        230,
-        105,
+        45, 50,
+        230, 105,
         0
     );
 
     /*
-     * Prompt indicator.
+     * Prompt.
      */
     graphics_rectangle(
         50,
         60,
-        4,
-        8,
+        2,
+        7,
         10
     );
 }
 
 /*
- * Draw cursor.
+ * Cursor.
  */
 void draw_cursor(int x, int y)
 {
@@ -192,115 +339,57 @@ void draw_cursor(int x, int y)
     );
 
     graphics_rectangle(
-        x + 2,
-        y + 2,
-        2,
-        12,
+        x + 2, y + 2,
+        2, 12,
         15
     );
 
     graphics_rectangle(
-        x + 4,
-        y + 4,
-        2,
-        11,
+        x + 4, y + 4,
+        2, 11,
         15
     );
 
     graphics_rectangle(
-        x + 6,
-        y + 6,
-        2,
-        10,
+        x + 6, y + 6,
+        2, 10,
         15
     );
 
     graphics_rectangle(
-        x + 8,
-        y + 8,
-        2,
-        9,
+        x + 8, y + 8,
+        2, 9,
         15
     );
 
     graphics_rectangle(
-        x + 10,
-        y + 10,
-        2,
-        7,
+        x + 10, y + 10,
+        2, 7,
         15
     );
 
     graphics_rectangle(
-        x + 12,
-        y + 12,
-        2,
-        6,
+        x + 12, y + 12,
+        2, 6,
         15
     );
 }
 
 /*
- * Check if cursor is over Terminal.
+ * Terminal icon hit detection.
  */
 int cursor_over_terminal(void)
 {
-    if (cursor_x >= 20 &&
+    return (
+        cursor_x >= 20 &&
         cursor_x < 70 &&
         cursor_y >= 40 &&
-        cursor_y < 80)
-    {
-        return 1;
-    }
-
-    return 0;
-}
-
-/*
- * Draw one simple character block.
- *
- * This is temporary.
- * A real MatrixOS font renderer comes next.
- */
-void draw_character(char c)
-{
-    int width = 4;
-    int height = 7;
-
-    if (c == ' ')
-    {
-        text_x += 6;
-        return;
-    }
-
-    /*
-     * Simple visible character representation.
-     */
-    graphics_rectangle(
-        text_x,
-        text_y,
-        width,
-        height,
-        15
+        cursor_y < 80
     );
-
-    text_x += 6;
-
-    if (text_x > 265)
-    {
-        text_x = 50;
-        text_y += 10;
-    }
-
-    if (text_y > 145)
-    {
-        text_x = 50;
-        text_y = 60;
-    }
 }
 
 /*
- * Handle keyboard input.
+ * Process keyboard.
  */
 void handle_keyboard(void)
 {
@@ -311,9 +400,6 @@ void handle_keyboard(void)
     if (key == 0)
         return;
 
-    /*
-     * Backspace.
-     */
     if (key == '\b')
     {
         if (text_x > 50)
@@ -332,30 +418,22 @@ void handle_keyboard(void)
         return;
     }
 
-    /*
-     * Enter.
-     */
     if (key == '\n')
     {
         text_x = 50;
         text_y += 10;
 
         if (text_y > 145)
-        {
             text_y = 60;
-        }
 
         return;
     }
 
-    /*
-     * Normal character.
-     */
     draw_character(key);
 }
 
 /*
- * Main kernel.
+ * Kernel entry.
  */
 void kernel_main(void)
 {
@@ -373,7 +451,7 @@ void kernel_main(void)
     while (1)
     {
         /*
-         * Keyboard only works inside Terminal.
+         * Keyboard is now non-blocking.
          */
         if (terminal_open)
         {
@@ -404,7 +482,7 @@ void kernel_main(void)
                 cursor_y = SCREEN_HEIGHT - 20;
 
             /*
-             * Detect a NEW left click.
+             * Detect new left click.
              */
             if ((buttons & 1) &&
                 !(old_buttons & 1))
@@ -418,11 +496,17 @@ void kernel_main(void)
             old_buttons = buttons;
 
             /*
-             * Redraw everything.
+             * IMPORTANT:
+             *
+             * Don't redraw the terminal every time
+             * the mouse moves, because that would
+             * erase typed characters.
              */
-            draw_desktop();
-
-            if (terminal_open)
+            if (!terminal_open)
+            {
+                draw_desktop();
+            }
+            else
             {
                 draw_terminal();
             }
