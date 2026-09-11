@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.7 - Graphics + 7 Sector Kernel
+; Version 2.8 - 8 Sector Kernel
 
 BITS 16
 ORG 0x7C00
@@ -14,20 +14,18 @@ start:
     mov ss, ax
     mov sp, 0x7C00
 
-    ; Save BIOS boot drive
     mov [boot_drive], dl
 
-    ; Boot message
     mov si, boot_message
     call print_string
 
     ; --------------------------------
     ; Load MatrixOS kernel
-    ; 7 sectors -> physical 0x1000
+    ; 8 sectors -> physical 0x1000
     ; --------------------------------
 
     mov ah, 0x02
-    mov al, 0x07
+    mov al, 0x08
     mov ch, 0x00
     mov cl, 0x02
     mov dh, 0x00
@@ -42,7 +40,6 @@ start:
 
     ; --------------------------------
     ; Enable VGA Mode 13h
-    ; 320x200, 256 colors
     ; --------------------------------
 
     mov ax, 0x0013
@@ -62,7 +59,6 @@ start:
     or eax, 0x01
     mov cr0, eax
 
-    ; Jump to protected mode
     jmp 0x08:protected_mode
 
 
@@ -118,7 +114,6 @@ protected_mode:
 
     mov esp, 0x90000
 
-    ; Jump to MatrixOS kernel
     jmp 0x08:0x1000
 
 
@@ -172,7 +167,6 @@ error_message:
     db "MATRIXOS: Disk error", 13, 10, 0
 
 
-; Boot sector must be exactly 512 bytes
 times 510 - ($ - $$) db 0
 
 dw 0xAA55
