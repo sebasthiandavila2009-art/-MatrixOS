@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.2
+; Version 1.3
 
 BITS 16
 ORG 0x7C00
@@ -8,27 +8,25 @@ start:
     cli
     cld
 
-    ; Set up real-mode segments
+    ; Real-mode segments
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
 
-    ; Save BIOS boot drive
+    ; Save BIOS drive
     mov [boot_drive], dl
 
-    ; ----------------------------------------
     ; Boot message
-    ; ----------------------------------------
-
     mov si, boot_message
     call print_string
 
     ; ----------------------------------------
-    ; Load MatrixOS kernel
-    ; Sector 2, two sectors
-    ; Destination: 0x1000
+    ; Load kernel
+    ; Sector 2
+    ; 2 sectors
+    ; Load address: 0x1000
     ; ----------------------------------------
 
     mov ah, 0x02
@@ -42,10 +40,7 @@ start:
     int 0x13
     jc disk_error
 
-    ; ----------------------------------------
     ; Kernel loaded
-    ; ----------------------------------------
-
     mov si, kernel_message
     call print_string
 
@@ -59,7 +54,6 @@ start:
 
     ; ----------------------------------------
     ; Load GDT
-    ; NASM calculates the address automatically
     ; ----------------------------------------
 
     lgdt [gdt_descriptor]
@@ -69,16 +63,16 @@ start:
     ; ----------------------------------------
 
     mov eax, cr0
-    or eax, 0x01
+    or eax, 1
     mov cr0, eax
 
     ; Far jump into 32-bit protected mode
     jmp CODE_SEG:protected_mode
 
 
-; --------------------------------------------
-; BIOS text output
-; --------------------------------------------
+; ============================================
+; REAL MODE PRINT
+; ============================================
 
 print_string:
     lodsb
@@ -87,7 +81,7 @@ print_string:
     jz .done
 
     mov ah, 0x0E
-    mov bh, 0x00
+    mov bh, 0
     int 0x10
 
     jmp print_string
@@ -96,9 +90,9 @@ print_string:
     ret
 
 
-; --------------------------------------------
-; Disk error
-; --------------------------------------------
+; ============================================
+; DISK ERROR
+; ============================================
 
 disk_error:
     mov si, error_message
@@ -118,7 +112,7 @@ BITS 32
 
 protected_mode:
 
-    ; Load data segment
+    ; Load data segments
     mov ax, DATA_SEG
     mov ds, ax
     mov es, ax
@@ -126,15 +120,20 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set protected-mode stack
+    ; Protected-mode stack
     mov esp, 0x90000
 
-    ; Jump to MatrixOS kernel
-    jmp 0x1000
+    ; ----------------------------------------
+    ; IMPORTANT:
+    ; This is a FAR jump to absolute 0x1000.
+    ; The old "jmp 0x1000" was relative.
+    ; ----------------------------------------
+
+    jmp CODE_SEG:0x1000
 
 
 ; ============================================
-; GLOBAL DESCRIPTOR TABLE
+; GDT
 ; ============================================
 
 gdt_start:
@@ -161,13 +160,11 @@ gdt_data:
 gdt_end:
 
 
-; GDT descriptor
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
 
-; Segment selectors
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
@@ -189,7 +186,7 @@ error_message:
 
 
 ; ============================================
-; BOOT SECTOR
+; BOOT SIGNATURE
 ; ============================================
 
 times 510 - ($ - $$) db 0
