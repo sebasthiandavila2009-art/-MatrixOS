@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.4
+; Version 1.5 - Protected Mode Diagnostic
 
 BITS 16
 ORG 0x7C00
@@ -16,10 +16,19 @@ start:
 
     mov [boot_drive], dl
 
+    ; ----------------------------------------
+    ; Boot message
+    ; ----------------------------------------
+
     mov si, boot_message
     call print_string
 
-    ; Load kernel: 2 sectors from sector 2 to 0000:1000
+    ; ----------------------------------------
+    ; Load kernel
+    ; Sector 2, two sectors
+    ; Load to physical address 0x1000
+    ; ----------------------------------------
+
     mov ah, 0x02
     mov al, 0x02
     mov ch, 0x00
@@ -34,22 +43,35 @@ start:
     mov si, kernel_message
     call print_string
 
+    ; ----------------------------------------
     ; Enable A20
+    ; ----------------------------------------
+
     in al, 0x92
     or al, 0x02
     out 0x92, al
 
+    ; ----------------------------------------
     ; Load GDT
+    ; ----------------------------------------
+
     lgdt [gdt_descriptor]
 
+    ; ----------------------------------------
     ; Enter protected mode
+    ; ----------------------------------------
+
     mov eax, cr0
-    or eax, 1
+    or eax, 0x01
     mov cr0, eax
 
-    ; Far jump into 32-bit protected mode
+    ; Far jump reloads CS
     jmp CODE_SEG:protected_mode
 
+
+; ============================================
+; BIOS PRINT
+; ============================================
 
 print_string:
     lodsb
@@ -57,7 +79,7 @@ print_string:
     jz .done
 
     mov ah, 0x0E
-    mov bh, 0
+    mov bh, 0x00
     int 0x10
 
     jmp print_string
@@ -65,6 +87,10 @@ print_string:
 .done:
     ret
 
+
+; ============================================
+; DISK ERROR
+; ============================================
 
 disk_error:
     mov si, error_message
@@ -77,31 +103,43 @@ disk_error:
 
 
 ; ============================================
-; PROTECTED MODE CHECKPOINT
+; 32-BIT PROTECTED MODE
 ; ============================================
 
 BITS 32
 
 protected_mode:
 
+    ; ----------------------------------------
+    ; FIRST CHECKPOINT
+    ;
+    ; If we see P on screen, protected mode
+    ; is working.
+    ; ----------------------------------------
+
+    mov word [0xB8000], 0x0750
+
+    ; ----------------------------------------
+    ; Now load data segments
+    ; ----------------------------------------
+
     mov ax, DATA_SEG
+
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
 
+    ; Set protected-mode stack
     mov esp, 0x90000
 
-    ; Write "P" directly to VGA.
-    ; If this appears, protected mode is working.
-    mov word [0xB8000], 0x0750
+    ; ----------------------------------------
+    ; Jump to kernel
+    ; Kernel is loaded at physical 0x1000
+    ; ----------------------------------------
 
-    ; Stop here for the diagnostic.
-.hang:
-    cli
-    hlt
-    jmp .hang
+    jmp CODE_SEG:0x1000
 
 
 ; ============================================
@@ -131,9 +169,11 @@ gdt_data:
 
 gdt_end:
 
+
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
+
 
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
@@ -143,7 +183,8 @@ DATA_SEG equ gdt_data - gdt_start
 ; DATA
 ; ============================================
 
-boot_drive db 0
+boot_drive:
+    db 0
 
 boot_message:
     db "MATRIXOS: Bootloader OK", 13, 10, 0
