@@ -9,8 +9,8 @@ int cursor = 0;
 
 void kernel_main(void)
 {
-    const char *message = "MATRIXOS v0.4 - Shell Ready";
-
+    const char *message = "MATRIXOS v0.4 - SHELL READY";
+    
     for (int i = 0; message[i] != '\0'; i++)
     {
         video[cursor++] = (unsigned short)message[i] | 0x0700;
@@ -22,11 +22,14 @@ void kernel_main(void)
     {
         char key = keyboard_get_char();
 
-        video[cursor++] = (unsigned short)key | 0x0700;
-
-        if (cursor >= 2000)
+        if (key != 0)
         {
-            cursor = 0;
+            video[cursor++] = (unsigned short)key | 0x0700;
+
+            if (cursor >= 2000)
+            {
+                cursor = 0;
+            }
         }
     }
 }
