@@ -1,8 +1,8 @@
 // MatrixOS Keyboard Driver
-// Version 0.5 - Non-Blocking Input
+// Version 0.6 - Keyboard/Mouse Separation
 
-#define KEYBOARD_DATA   0x60
-#define KEYBOARD_STATUS 0x64
+#define KEYBOARD_DATA    0x60
+#define KEYBOARD_STATUS  0x64
 
 static inline unsigned char inb(unsigned short port)
 {
@@ -17,24 +17,44 @@ static inline unsigned char inb(unsigned short port)
     return value;
 }
 
+
 /*
- * Read keyboard input without freezing the kernel.
+ * Read keyboard input without blocking.
  *
- * Returns:
- *   0 = no key available
- *   ASCII character = key pressed
+ * PS/2 controller status:
+ *
+ * Bit 0 = output buffer has data
+ * Bit 5 = data came from mouse
+ *
+ * We only accept data when:
+ *
+ * Bit 0 = 1
+ * Bit 5 = 0
  */
 char keyboard_get_char(void)
 {
+    unsigned char status;
     unsigned char scancode;
 
+    status = inb(KEYBOARD_STATUS);
+
     /*
-     * Check whether the keyboard has data.
-     * Do NOT wait here.
+     * No data available.
      */
-    if ((inb(KEYBOARD_STATUS) & 1) == 0)
+    if ((status & 0x01) == 0)
         return 0;
 
+    /*
+     * Data came from the mouse.
+     *
+     * DO NOT read it as keyboard input.
+     */
+    if (status & 0x20)
+        return 0;
+
+    /*
+     * Now we know the byte is keyboard data.
+     */
     scancode = inb(KEYBOARD_DATA);
 
     /*
@@ -42,6 +62,11 @@ char keyboard_get_char(void)
      */
     if (scancode & 0x80)
         return 0;
+
+
+    /*
+     * Number row.
+     */
 
     switch (scancode)
     {
@@ -56,6 +81,11 @@ char keyboard_get_char(void)
         case 0x0A: return '9';
         case 0x0B: return '0';
 
+
+        /*
+         * QWERTY row.
+         */
+
         case 0x10: return 'q';
         case 0x11: return 'w';
         case 0x12: return 'e';
@@ -67,6 +97,11 @@ char keyboard_get_char(void)
         case 0x18: return 'o';
         case 0x19: return 'p';
 
+
+        /*
+         * ASDF row.
+         */
+
         case 0x1E: return 'a';
         case 0x1F: return 's';
         case 0x20: return 'd';
@@ -77,6 +112,11 @@ char keyboard_get_char(void)
         case 0x25: return 'k';
         case 0x26: return 'l';
 
+
+        /*
+         * ZXCV row.
+         */
+
         case 0x2C: return 'z';
         case 0x2D: return 'x';
         case 0x2E: return 'c';
@@ -85,11 +125,34 @@ char keyboard_get_char(void)
         case 0x31: return 'n';
         case 0x32: return 'm';
 
-        case 0x39: return ' ';
 
-        case 0x1C: return '\n';
+        /*
+         * Space.
+         */
 
-        case 0x0E: return '\b';
+        case 0x39:
+            return ' ';
+
+
+        /*
+         * Enter.
+         */
+
+        case 0x1C:
+            return '\n';
+
+
+        /*
+         * Backspace.
+         */
+
+        case 0x0E:
+            return '\b';
+
+
+        /*
+         * Unknown key.
+         */
 
         default:
             return 0;
