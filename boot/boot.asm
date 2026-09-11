@@ -16,19 +16,10 @@ start:
 
     mov [boot_drive], dl
 
-    ; ----------------------------------------
-    ; Boot message
-    ; ----------------------------------------
-
     mov si, boot_message
     call print_string
 
-    ; ----------------------------------------
-    ; Load kernel
-    ; Sector 2, two sectors
-    ; Load to physical address 0x1000
-    ; ----------------------------------------
-
+    ; Load kernel: sectors 2-3 -> physical 0x1000
     mov ah, 0x02
     mov al, 0x02
     mov ch, 0x00
@@ -43,35 +34,23 @@ start:
     mov si, kernel_message
     call print_string
 
-    ; ----------------------------------------
     ; Enable A20
-    ; ----------------------------------------
-
     in al, 0x92
     or al, 0x02
     out 0x92, al
 
-    ; ----------------------------------------
     ; Load GDT
-    ; ----------------------------------------
-
     lgdt [gdt_descriptor]
 
-    ; ----------------------------------------
-    ; Enter protected mode
-    ; ----------------------------------------
-
+    ; Enable protected mode
     mov eax, cr0
     or eax, 0x01
     mov cr0, eax
 
-    ; Far jump into 32-bit protected mode
+    ; Explicit 32-bit far jump
+    db 0x66
     jmp CODE_SEG:protected_mode
 
-
-; ============================================
-; BIOS PRINT
-; ============================================
 
 print_string:
     lodsb
@@ -81,16 +60,11 @@ print_string:
     mov ah, 0x0E
     mov bh, 0x00
     int 0x10
-
     jmp print_string
 
 .done:
     ret
 
-
-; ============================================
-; DISK ERROR
-; ============================================
 
 disk_error:
     mov si, error_message
@@ -102,54 +76,31 @@ disk_error:
     jmp .hang
 
 
-; ============================================
-; 32-BIT PROTECTED MODE
-; ============================================
-
 BITS 32
 
 protected_mode:
 
-    ; ----------------------------------------
-    ; Load protected-mode data segments
-    ; ----------------------------------------
-
+    ; Set protected-mode data segments
     mov ax, DATA_SEG
-
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
 
-    ; ----------------------------------------
-    ; Protected-mode stack
-    ; ----------------------------------------
-
     mov esp, 0x90000
 
-    ; ----------------------------------------
-    ; Protected-mode checkpoint
-    ; ----------------------------------------
-    ; P = protected mode is working
-
+    ; Checkpoint
     mov word [0xB8000], 0x0750
 
-    ; ----------------------------------------
-    ; Jump to MatrixOS kernel
-    ; ----------------------------------------
-
+    ; Jump to kernel
     jmp CODE_SEG:0x1000
 
-
-; ============================================
-; GDT
-; ============================================
 
 gdt_start:
 
 gdt_null:
-    dq 0x0000000000000000
+    dq 0
 
 gdt_code:
     dw 0xFFFF
@@ -169,19 +120,13 @@ gdt_data:
 
 gdt_end:
 
-
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
-
 CODE_SEG equ gdt_code - gdt_start
 DATA_SEG equ gdt_data - gdt_start
 
-
-; ============================================
-; DATA
-; ============================================
 
 boot_drive:
     db 0
@@ -196,10 +141,5 @@ error_message:
     db "MATRIXOS: Disk error", 13, 10, 0
 
 
-; ============================================
-; BOOT SIGNATURE
-; ============================================
-
 times 510 - ($ - $$) db 0
-
 dw 0xAA55
