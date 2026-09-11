@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 1.1 - MatrixOS Desktop
+// Version 1.2 - Terminal Window
 
 extern void mouse_init(void);
 
@@ -25,17 +25,21 @@ extern void graphics_rectangle(
 #define TOPBAR_HEIGHT 18
 #define TASKBAR_HEIGHT 16
 
+#define TERMINAL_X       20
+#define TERMINAL_Y       40
+#define TERMINAL_WIDTH   50
+#define TERMINAL_HEIGHT  40
+
 int cursor_x = 160;
 int cursor_y = 100;
 
+int terminal_open = 0;
+
 /*
- * Draw a simple MatrixOS desktop.
+ * Draw the MatrixOS desktop.
  */
 void draw_desktop(void)
 {
-    /*
-     * Main desktop background.
-     */
     graphics_clear(1);
 
     /*
@@ -94,7 +98,7 @@ void draw_desktop(void)
     );
 
     /*
-     * Small icon details.
+     * Icon details.
      */
     graphics_rectangle(
         28,
@@ -118,6 +122,67 @@ void draw_desktop(void)
         34,
         4,
         0
+    );
+}
+
+/*
+ * Draw Terminal window.
+ */
+void draw_terminal(void)
+{
+    /*
+     * Window body.
+     */
+    graphics_rectangle(
+        35,
+        25,
+        250,
+        140,
+        0
+    );
+
+    /*
+     * Window title bar.
+     */
+    graphics_rectangle(
+        35,
+        25,
+        250,
+        18,
+        15
+    );
+
+    /*
+     * Close button.
+     */
+    graphics_rectangle(
+        268,
+        29,
+        10,
+        10,
+        4
+    );
+
+    /*
+     * Terminal area.
+     */
+    graphics_rectangle(
+        45,
+        50,
+        230,
+        105,
+        0
+    );
+
+    /*
+     * Simple prompt.
+     */
+    graphics_rectangle(
+        50,
+        60,
+        4,
+        8,
+        10
     );
 }
 
@@ -155,6 +220,22 @@ void draw_cursor(int x, int y)
 }
 
 /*
+ * Check if cursor is over Terminal icon.
+ */
+int cursor_over_terminal(void)
+{
+    if (cursor_x >= 20 &&
+        cursor_x < 70 &&
+        cursor_y >= 40 &&
+        cursor_y < 80)
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+/*
  * MatrixOS kernel entry point.
  */
 void kernel_main(void)
@@ -163,36 +244,23 @@ void kernel_main(void)
     int dy;
     unsigned char buttons;
 
-    /*
-     * Initialize mouse.
-     */
     mouse_init();
 
-    /*
-     * Draw desktop.
-     */
     draw_desktop();
-
-    /*
-     * Draw cursor.
-     */
     draw_cursor(cursor_x, cursor_y);
 
-    /*
-     * Main desktop loop.
-     */
     while (1)
     {
         if (mouse_get_packet(&dx, &dy, &buttons))
         {
             /*
-             * Update cursor.
+             * Update cursor position.
              */
             cursor_x += dx;
             cursor_y -= dy;
 
             /*
-             * Keep cursor inside screen.
+             * Keep cursor on screen.
              */
             if (cursor_x < 0)
                 cursor_x = 0;
@@ -207,12 +275,31 @@ void kernel_main(void)
                 cursor_y = SCREEN_HEIGHT - 20;
 
             /*
-             * Redraw desktop and cursor.
+             * Left-click Terminal.
+             */
+            if ((buttons & 0x01) &&
+                cursor_over_terminal())
+            {
+                terminal_open = 1;
+            }
+
+            /*
+             * Redraw desktop.
              */
             draw_desktop();
-            draw_cursor(cursor_x, cursor_y);
 
-            (void)buttons;
+            /*
+             * Draw Terminal if opened.
+             */
+            if (terminal_open)
+            {
+                draw_terminal();
+            }
+
+            /*
+             * Always draw cursor last.
+             */
+            draw_cursor(cursor_x, cursor_y);
         }
     }
 }
