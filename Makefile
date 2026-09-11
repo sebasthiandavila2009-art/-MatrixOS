@@ -28,7 +28,7 @@ $(BUILD)/keyboard.o: drivers/keyboard.c | $(BUILD)
 	$(CC) -target i386-unknown-none -ffreestanding -fno-stack-protector -fno-pic -m32 -c drivers/keyboard.c -o $(BUILD)/keyboard.o
 
 $(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o
-	$(LD) -flavor gnu -Ttext 0x1000 --image-base 0x0 --oformat binary -o $(BUILD)/kernel.bin $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o
+		$(LD) -flavor gnu -e _start -Ttext 0x1000 --image-base 0x0 --oformat binary -o $(BUILD)/kernel.bin $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o
 
 $(IMAGE): $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	dd if=/dev/zero of=$(IMAGE) bs=512 count=2880
