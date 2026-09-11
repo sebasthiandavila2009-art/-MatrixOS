@@ -1,5 +1,5 @@
 // MatrixOS PS/2 Mouse Driver
-// Version 0.2
+// Version 0.3 - Mouse Cursor
 
 #define MOUSE_DATA_PORT    0x60
 #define MOUSE_STATUS_PORT  0x64
@@ -27,7 +27,6 @@ static inline void outb(unsigned short port, unsigned char value)
     );
 }
 
-/* Wait for the controller input buffer to become empty. */
 static int mouse_wait_write(void)
 {
     unsigned int timeout = 100000;
@@ -41,14 +40,15 @@ static int mouse_wait_write(void)
     return 0;
 }
 
-/* Wait for data from the controller. */
 static int mouse_wait_read(void)
 {
     unsigned int timeout = 100000;
 
     while (timeout--)
     {
-        if (inb(MOUSE_STATUS_PORT) & 1)
+        unsigned char status = inb(MOUSE_STATUS_PORT);
+
+        if ((status & 1) && (status & 0x20))
             return 1;
     }
 
@@ -76,6 +76,7 @@ static int mouse_read(unsigned char *value)
         return 0;
 
     *value = inb(MOUSE_DATA_PORT);
+
     return 1;
 }
 
@@ -84,13 +85,13 @@ void mouse_init(void)
     unsigned char status;
     unsigned char response;
 
-    /* Enable the PS/2 auxiliary mouse device. */
+    /* Enable PS/2 auxiliary mouse device. */
     if (!mouse_wait_write())
         return;
 
     outb(MOUSE_COMMAND_PORT, 0xA8);
 
-    /* Read controller configuration byte. */
+    /* Read controller configuration. */
     if (!mouse_wait_write())
         return;
 
@@ -105,7 +106,7 @@ void mouse_init(void)
     /* Enable mouse clock. */
     status &= ~0x20;
 
-    /* Write controller configuration byte. */
+    /* Write controller configuration. */
     if (!mouse_wait_write())
         return;
 
@@ -130,15 +131,54 @@ void mouse_init(void)
 }
 
 /*
- * Read one byte from the mouse.
- * Returns 0 if no data is currently available.
+ * Read a complete 3-byte PS/2 mouse packet.
+ *
+ * Returns:
+ *   1 = packet received
+ *   0 = no packet available
  */
-unsigned char mouse_get_byte(void)
+int mouse_get_packet(int *dx, int *dy, unsigned char *buttons)
 {
+    static unsigned char packet[3];
+    static int packet_index = 0;
+
     unsigned char value;
 
     if (!mouse_read(&value))
         return 0;
 
-    return value;
+    packet[packet_index++] = value;
+
+    if (packet_index < 3)
+        return 0;
+
+    packet_index = 0;
+
+    /*
+     * First byte:
+     * bit 0 = left button
+     * bit 1 = right button
+     * bit 2 = middle button
+     * bit 3 = always 1
+     * bit 4 = X sign
+     * bit 5 = Y sign
+     * bit 6 = X overflow
+     * bit 7 = Y overflow
+     */
+
+    *buttons = packet[0] & 0x07;
+
+    *dx = (int)(signed char)packet[1];
+    *dy = (int)(signed char)packet[2];
+
+    /*
+     * Ignore packets with overflow.
+     */
+    if (packet[0] & 0xC0)
+    {
+        *dx = 0;
+        *dy = 0;
+    }
+
+    return 1;
 }
