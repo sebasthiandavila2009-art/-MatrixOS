@@ -1,5 +1,5 @@
 # MatrixOS Build System
-# Version 0.3
+# Version 0.4
 
 ASM = nasm
 CC = clang
@@ -24,8 +24,11 @@ $(BUILD)/entry.o: kernel/entry.asm | $(BUILD)
 $(BUILD)/kernel.o: kernel/kernel.c | $(BUILD)
 	$(CC) -target i386-unknown-none -ffreestanding -fno-stack-protector -fno-pic -m32 -c kernel/kernel.c -o $(BUILD)/kernel.o
 
-$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o
-	$(LD) -flavor gnu -Ttext 0x1000 --image-base 0x0 --oformat binary -o $(BUILD)/kernel.bin $(BUILD)/entry.o $(BUILD)/kernel.o
+$(BUILD)/keyboard.o: drivers/keyboard.c | $(BUILD)
+	$(CC) -target i386-unknown-none -ffreestanding -fno-stack-protector -fno-pic -m32 -c drivers/keyboard.c -o $(BUILD)/keyboard.o
+
+$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o
+	$(LD) -flavor gnu -Ttext 0x1000 --image-base 0x0 --oformat binary -o $(BUILD)/kernel.bin $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o
 
 $(IMAGE): $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	dd if=/dev/zero of=$(IMAGE) bs=512 count=2880
