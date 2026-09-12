@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 1.9 - Stable Cursor + Desktop Redraw
+// Version 2.0 - MatrixBook Desktop Top Bar
 
 extern void mouse_init(void);
 
@@ -21,18 +21,8 @@ extern void graphics_rectangle(
     unsigned char color
 );
 
-
-/*
- * Screen
- */
-
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
-
-
-/*
- * Terminal
- */
 
 #define TERMINAL_X       35
 #define TERMINAL_Y       25
@@ -42,83 +32,34 @@ extern void graphics_rectangle(
 #define TEXT_START_X     50
 #define TEXT_START_Y     60
 
-
-/*
- * Mouse cursor
- */
-
 #define CURSOR_WIDTH     20
 #define CURSOR_HEIGHT    22
 
-
-/*
- * Terminal text
- */
-
-#define MAX_TEXT 512
-
-
-/*
- * Mouse position
- */
+#define MAX_TEXT         512
 
 int cursor_x = 160;
 int cursor_y = 100;
 
-
-/*
- * Terminal state
- */
-
 int terminal_open = 0;
-
-
-/*
- * Terminal text position
- */
 
 int text_x = TEXT_START_X;
 int text_y = TEXT_START_Y;
 
-
-/*
- * Terminal text buffer
- */
-
 static char terminal_text[MAX_TEXT];
-
 int terminal_text_length = 0;
-
-
-/*
- * Cursor background.
- */
 
 static unsigned char cursor_background[
     CURSOR_WIDTH * CURSOR_HEIGHT
 ];
 
-
-/*
- * Cursor visibility state.
- *
- * 1 = cursor is currently drawn
- * 0 = cursor is erased
- */
-
 static int cursor_visible = 0;
-
-
-/*
- * VGA framebuffer.
- */
 
 volatile unsigned char *video_memory =
     (volatile unsigned char *)0xA0000;
 
 
 /*
- * 5x7 font.
+ * 5x7 font
  */
 
 static const unsigned char font[26][7] =
@@ -153,7 +94,7 @@ static const unsigned char font[26][7] =
 
 
 /*
- * Get font row.
+ * Get one font row.
  */
 
 unsigned char get_font_row(char c, int row)
@@ -172,7 +113,7 @@ unsigned char get_font_row(char c, int row)
 
 
 /*
- * Draw character.
+ * Draw one character.
  */
 
 void draw_character_at(
@@ -207,6 +148,37 @@ void draw_character_at(
                 );
             }
         }
+    }
+}
+
+
+/*
+ * Draw a text string.
+ */
+
+void draw_text(
+    const char *text,
+    int x,
+    int y)
+{
+    while (*text)
+    {
+        if (*text == ' ')
+        {
+            x += 6;
+        }
+        else
+        {
+            draw_character_at(
+                *text,
+                x,
+                y
+            );
+
+            x += 6;
+        }
+
+        text++;
     }
 }
 
@@ -263,11 +235,15 @@ void draw_terminal_text(void)
 
 
 /*
- * Draw desktop.
+ * Draw MatrixBook desktop.
  */
 
 void draw_desktop(void)
 {
+    /*
+     * Desktop background.
+     */
+
     graphics_clear(1);
 
     /*
@@ -283,7 +259,27 @@ void draw_desktop(void)
     );
 
     /*
-     * Bottom taskbar.
+     * MatrixOS branding.
+     */
+
+    draw_text(
+        "MATRIXOS",
+        8,
+        5
+    );
+
+    /*
+     * MatrixBook branding.
+     */
+
+    draw_text(
+        "MATRIXBOOK",
+        252,
+        5
+    );
+
+    /*
+     * Bottom dock.
      */
 
     graphics_rectangle(
@@ -306,6 +302,14 @@ void draw_desktop(void)
         15
     );
 
+    graphics_rectangle(
+        28,
+        50,
+        34,
+        4,
+        0
+    );
+
     /*
      * Files icon.
      */
@@ -316,6 +320,14 @@ void draw_desktop(void)
         50,
         40,
         15
+    );
+
+    graphics_rectangle(
+        98,
+        50,
+        34,
+        4,
+        0
     );
 
     /*
@@ -330,26 +342,6 @@ void draw_desktop(void)
         15
     );
 
-    /*
-     * Icon details.
-     */
-
-    graphics_rectangle(
-        28,
-        50,
-        34,
-        4,
-        0
-    );
-
-    graphics_rectangle(
-        98,
-        50,
-        34,
-        4,
-        0
-    );
-
     graphics_rectangle(
         168,
         50,
@@ -361,7 +353,7 @@ void draw_desktop(void)
 
 
 /*
- * Draw Terminal.
+ * Draw Terminal window.
  */
 
 void draw_terminal(void)
@@ -391,6 +383,19 @@ void draw_terminal(void)
     );
 
     /*
+     * Terminal title.
+     *
+     * The title is drawn black
+     * over the white title bar.
+     */
+
+    draw_text(
+        "TERMINAL",
+        TERMINAL_X + 8,
+        TERMINAL_Y + 5
+    );
+
+    /*
      * Close button.
      */
 
@@ -415,13 +420,13 @@ void draw_terminal(void)
     );
 
     /*
-     * Draw existing text.
+     * Existing terminal text.
      */
 
     draw_terminal_text();
 
     /*
-     * Terminal text cursor.
+     * Terminal cursor.
      */
 
     graphics_rectangle(
@@ -435,8 +440,7 @@ void draw_terminal(void)
 
 
 /*
- * Save the pixels underneath
- * the mouse cursor.
+ * Save pixels underneath cursor.
  */
 
 void cursor_save_background(void)
@@ -475,18 +479,13 @@ void cursor_save_background(void)
 
 
 /*
- * Restore the pixels underneath
- * the mouse cursor.
+ * Restore pixels underneath cursor.
  */
 
 void cursor_restore_background(void)
 {
     int x;
     int y;
-
-    /*
-     * Do not restore the cursor twice.
-     */
 
     if (!cursor_visible)
         return;
@@ -518,7 +517,7 @@ void cursor_restore_background(void)
 
 
 /*
- * Draw MatrixOS mouse cursor.
+ * Draw MatrixOS cursor.
  */
 
 void draw_cursor(void)
@@ -605,7 +604,7 @@ void draw_cursor(void)
 
 
 /*
- * Erase cursor safely.
+ * Erase cursor.
  */
 
 void cursor_erase(void)
@@ -615,7 +614,7 @@ void cursor_erase(void)
 
 
 /*
- * Show cursor safely.
+ * Show cursor.
  */
 
 void cursor_show(void)
@@ -629,43 +628,26 @@ void cursor_show(void)
 
 
 /*
- * Redraw the complete MatrixOS screen.
+ * Redraw entire screen.
  */
 
 void redraw_screen(void)
 {
-    /*
-     * Erase cursor only if it
-     * is currently visible.
-     */
-
     cursor_erase();
 
-    /*
-     * Draw the desktop.
-     */
-
     draw_desktop();
-
-    /*
-     * Draw Terminal if open.
-     */
 
     if (terminal_open)
     {
         draw_terminal();
     }
 
-    /*
-     * Put cursor back on top.
-     */
-
     cursor_show();
 }
 
 
 /*
- * Check Terminal icon.
+ * Is cursor over Terminal?
  */
 
 int cursor_over_terminal(void)
@@ -683,7 +665,7 @@ int cursor_over_terminal(void)
 
 
 /*
- * Check Terminal close button.
+ * Is cursor over Terminal close?
  */
 
 int cursor_over_close(void)
@@ -725,7 +707,7 @@ void close_terminal(void)
 
 
 /*
- * Add character.
+ * Add terminal character.
  */
 
 void add_terminal_character(char key)
@@ -742,7 +724,7 @@ void add_terminal_character(char key)
 
 
 /*
- * Handle keyboard.
+ * Keyboard handler.
  */
 
 void handle_keyboard(void)
@@ -753,10 +735,6 @@ void handle_keyboard(void)
 
     if (key == 0)
         return;
-
-    /*
-     * Backspace.
-     */
 
     if (key == '\b')
     {
@@ -770,10 +748,6 @@ void handle_keyboard(void)
         return;
     }
 
-    /*
-     * Enter.
-     */
-
     if (key == '\n')
     {
         add_terminal_character('\n');
@@ -782,10 +756,6 @@ void handle_keyboard(void)
 
         return;
     }
-
-    /*
-     * Letters and spaces.
-     */
 
     if ((key >= 'a' && key <= 'z') ||
         (key >= 'A' && key <= 'Z') ||
@@ -810,27 +780,11 @@ void kernel_main(void)
     unsigned char buttons;
     unsigned char old_buttons = 0;
 
-    /*
-     * Initialize mouse.
-     */
-
     mouse_init();
-
-    /*
-     * Draw initial desktop.
-     */
 
     draw_desktop();
 
-    /*
-     * Draw initial cursor.
-     */
-
     cursor_show();
-
-    /*
-     * Main MatrixOS loop.
-     */
 
     while (1)
     {
@@ -852,24 +806,11 @@ void kernel_main(void)
                 &dy,
                 &buttons))
         {
-            /*
-             * Remember whether this
-             * is a new left click.
-             */
-
             int new_left_click =
                 ((buttons & 1) &&
                  !(old_buttons & 1));
 
-            /*
-             * Remove old cursor.
-             */
-
             cursor_erase();
-
-            /*
-             * Move cursor.
-             */
 
             cursor_x += dx;
             cursor_y -= dy;
@@ -899,25 +840,16 @@ void kernel_main(void)
             }
 
             /*
-             * Handle new left click.
+             * Handle clicks.
              */
 
             if (new_left_click)
             {
-                /*
-                 * Open Terminal.
-                 */
-
                 if (!terminal_open &&
                     cursor_over_terminal())
                 {
                     open_terminal();
                 }
-
-                /*
-                 * Close Terminal.
-                 */
-
                 else if (terminal_open &&
                          cursor_over_close())
                 {
@@ -925,20 +857,7 @@ void kernel_main(void)
                 }
             }
 
-            /*
-             * Remember current button state.
-             */
-
             old_buttons = buttons;
-
-            /*
-             * If the click opened or closed
-             * a window, redraw_screen()
-             * already restored and displayed
-             * the cursor.
-             *
-             * Otherwise show the cursor here.
-             */
 
             cursor_show();
         }
