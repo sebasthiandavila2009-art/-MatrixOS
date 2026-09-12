@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.2 - 30 Sector LBA Loader
+; Version 1.3 - Reliable 30 Sector LBA Loader
 
 BITS 16
 ORG 0x7C00
@@ -21,7 +21,10 @@ start:
     or al, 00000010b
     out 0x92, al
 
-    ; Check BIOS LBA support
+    ; ---------------------------------------------------------
+    ; Check BIOS LBA / EDD support
+    ; ---------------------------------------------------------
+
     mov ah, 0x41
     mov bx, 0x55AA
     mov dl, [boot_drive]
@@ -32,20 +35,21 @@ start:
     cmp bx, 0xAA55
     jne disk_error
 
+    test cx, 0x0001
+    jz disk_error
+
     ; ---------------------------------------------------------
     ; Load MatrixOS kernel
     ;
     ; Start LBA: 1
     ; Sectors: 30
-    ; Destination: 0x1000
-    ;
-    ; 30 x 512 = 15,360 bytes
+    ; Destination: 0000:1000
+    ; Total capacity: 30 x 512 = 15,360 bytes
     ; ---------------------------------------------------------
 
     mov si, disk_address_packet
-
-    mov ah, 0x42
     mov dl, [boot_drive]
+    mov ah, 0x42
 
     int 0x13
     jc disk_error
@@ -90,7 +94,6 @@ disk_error:
 
     cli
     hlt
-
     jmp .hang
 
 
@@ -153,20 +156,23 @@ gdt_descriptor:
 ; BIOS Extended Disk Address Packet
 ; =============================================================
 
+BITS 16
+
+align 4
+
 disk_address_packet:
 
     db 0x10
     db 0x00
 
-    ; IMPORTANT:
-    ; This is SECTORS, not bytes.
+    ; Number of sectors
     dw 30
 
-    ; Destination
+    ; Buffer: 0000:1000
     dw 0x1000
     dw 0x0000
 
-    ; Start at LBA 1
+    ; Starting LBA
     dq 1
 
 
