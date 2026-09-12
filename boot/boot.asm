@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.7 - Single Sector LBA Test
+; Version 1.8 - BIOS CHS Loader
 
 BITS 16
 ORG 0x7C00
@@ -15,87 +15,160 @@ start:
 
     mov [boot_drive], dl
 
-    ; A = bootloader started
+    ; Show A
     mov al, 'A'
     call print_char
 
-    ; Check BIOS EDD
-    mov ah, 0x41
-    mov bx, 0x55AA
+    ; Reset disk
+    xor ah, ah
     mov dl, [boot_drive]
-
     int 0x13
-    jc error
+    jc disk_error
 
-    cmp bx, 0xAA55
-    jne error
-
-    test cx, 1
-    jz error
-
-    ; B = EDD works
+    ; Show B
     mov al, 'B'
     call print_char
 
-    ; Read ONLY ONE sector
-    mov si, dap
+    ; ----------------------------------------
+    ; Read kernel using BIOS CHS
+    ;
+    ; Cylinder = 0
+    ; Head     = 0
+    ; Sector   = 2
+    ;
+    ; Read 30 sectors
+    ; Destination = 0000:1000
+    ; ----------------------------------------
+
+    mov ax, 0x1000
+    mov es, ax
+
+    xor bx, bx
+
+    mov ah, 0x02
+    mov al, 30
+
+    mov ch, 0
+    mov cl, 2
+    mov dh, 0
+
     mov dl, [boot_drive]
-    mov ah, 0x42
 
     int 0x13
-    jc error
+    jc disk_error
 
-    ; C = one-sector read works
+    ; Show C
     mov al, 'C'
     call print_char
 
-    cli
-    hlt
+    ; ----------------------------------------
+    ; Protected mode
+    ; ----------------------------------------
 
-error:
+    cli
+
+    lgdt [gdt_descriptor]
+
+    mov eax, cr0
+    or eax, 1
+    mov cr0, eax
+
+    jmp 0x08:protected_mode
+
+
+disk_error:
+
     mov si, error_message
 
 error_loop:
     lodsb
+
     test al, al
     jz halt
 
     call print_char
+
     jmp error_loop
 
-halt:
-    cli
-    hlt
-    jmp halt
 
 print_char:
+
     mov ah, 0x0E
     mov bh, 0
     int 0x10
+
     ret
 
 
-align 4
+halt:
 
-dap:
-    db 0x10
+    cli
+    hlt
+
+    jmp halt
+
+
+BITS 32
+
+protected_mode:
+
+    mov ax, 0x10
+
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    mov esp, 0x90000
+
+    jmp 0x1000
+
+
+BITS 16
+
+; ----------------------------------------
+; GDT
+; ----------------------------------------
+
+gdt_start:
+
+    dq 0
+
+gdt_code:
+
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10011010b
+    db 11001111b
     db 0x00
 
-    ; ONE sector
-    dw 1
+gdt_data:
 
-    ; Destination 0000:1000
-    dw 0x1000
+    dw 0xFFFF
     dw 0x0000
+    db 0x00
+    db 10010010b
+    db 11001111b
+    db 0x00
 
-    ; LBA 1
-    dq 1
+gdt_end:
+
+
+gdt_descriptor:
+
+    dw gdt_end - gdt_start - 1
+    dd gdt_start
 
 
 boot_drive:
+
     db 0
 
+
 error_message:
+
     db "MatrixOS: Disk error", 0
 
 
