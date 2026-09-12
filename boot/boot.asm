@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.0 - Reliable 30 Sector CHS Loader
+; Version 2.1 - Reliable CHS Kernel Loader
 
 BITS 16
 ORG 0x7C00
@@ -14,7 +14,7 @@ start:
     mov [boot_drive], dl
 
     ; ----------------------------------------
-    ; A = Bootloader started
+    ; Bootloader started
     ; ----------------------------------------
 
     mov al, 'A'
@@ -29,15 +29,11 @@ start:
     int 0x13
     jc disk_error
 
-    ; ----------------------------------------
-    ; B = Disk reset works
-    ; ----------------------------------------
-
     mov al, 'B'
     call print_char
 
     ; ----------------------------------------
-    ; Get BIOS disk geometry
+    ; Get disk geometry
     ; ----------------------------------------
 
     mov ah, 0x08
@@ -45,17 +41,18 @@ start:
     int 0x13
     jc disk_error
 
-    ; Sectors per track
     mov al, cl
     and al, 0x3F
     mov [sectors_per_track], al
 
-    ; Maximum head
     mov [max_head], dh
 
     ; ----------------------------------------
     ; Kernel destination
-    ; 0000:1000
+    ;
+    ; Start at 0000:1000
+    ; Each sector advances ES by 0x20
+    ; 0x20 paragraphs = 512 bytes
     ; ----------------------------------------
 
     mov ax, 0x1000
@@ -63,46 +60,42 @@ start:
 
     xor bx, bx
 
-    ; ----------------------------------------
-    ; Start CHS position
-    ;
-    ; Cylinder 0
-    ; Head 0
-    ; Sector 2
-    ;
-    ; Sector 1 contains bootloader
-    ; ----------------------------------------
-
+    ; Start after boot sector
     mov byte [current_sector], 2
     mov byte [current_head], 0
     mov word [current_cylinder], 0
 
-    ; 30 sectors total
+    ; Load 30 sectors
     mov byte [sectors_left], 30
 
 
 load_sector:
 
     ; ----------------------------------------
-    ; Read ONE sector
+    ; Read exactly ONE sector
     ; ----------------------------------------
 
     mov ah, 0x02
     mov al, 1
 
     mov ch, byte [current_cylinder]
-
     mov cl, byte [current_sector]
-
     mov dh, byte [current_head]
-
     mov dl, [boot_drive]
 
     int 0x13
-    jc read_retry
+    jc retry_read
 
     ; ----------------------------------------
-    ; Sector loaded
+    ; Move memory destination forward 512 bytes
+    ; ----------------------------------------
+
+    mov ax, es
+    add ax, 0x20
+    mov es, ax
+
+    ; ----------------------------------------
+    ; One sector completed
     ; ----------------------------------------
 
     dec byte [sectors_left]
@@ -110,17 +103,18 @@ load_sector:
     jz kernel_loaded
 
     ; ----------------------------------------
-    ; Move to next sector
+    ; Next sector
     ; ----------------------------------------
 
     inc byte [current_sector]
 
     mov al, [sectors_per_track]
+
     cmp byte [current_sector], al
     jbe load_sector
 
     ; ----------------------------------------
-    ; New track
+    ; Next head / track
     ; ----------------------------------------
 
     mov byte [current_sector], 1
@@ -128,27 +122,31 @@ load_sector:
     inc byte [current_head]
 
     mov al, [max_head]
+
     cmp byte [current_head], al
     jbe load_sector
 
     ; ----------------------------------------
-    ; New cylinder
+    ; Next cylinder
     ; ----------------------------------------
 
     mov byte [current_head], 0
+
     inc word [current_cylinder]
 
     jmp load_sector
 
 
-read_retry:
+retry_read:
 
-    ; Reset disk
+    ; ----------------------------------------
+    ; Reset disk and retry current sector
+    ; ----------------------------------------
+
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
 
-    ; Retry the same sector
     mov ah, 0x02
     mov al, 1
 
@@ -160,6 +158,11 @@ read_retry:
     int 0x13
     jc disk_error
 
+    ; Advance destination
+    mov ax, es
+    add ax, 0x20
+    mov es, ax
+
     dec byte [sectors_left]
 
     jz kernel_loaded
@@ -167,17 +170,21 @@ read_retry:
     inc byte [current_sector]
 
     mov al, [sectors_per_track]
+
     cmp byte [current_sector], al
     jbe load_sector
 
     mov byte [current_sector], 1
+
     inc byte [current_head]
 
     mov al, [max_head]
+
     cmp byte [current_head], al
     jbe load_sector
 
     mov byte [current_head], 0
+
     inc word [current_cylinder]
 
     jmp load_sector
@@ -186,7 +193,7 @@ read_retry:
 kernel_loaded:
 
     ; ----------------------------------------
-    ; C = Entire 30-sector kernel loaded
+    ; C = 30 sectors successfully loaded
     ; ----------------------------------------
 
     mov al, 'C'
@@ -210,6 +217,7 @@ kernel_loaded:
 disk_error:
 
     mov si, error_message
+
 
 error_loop:
 
@@ -236,6 +244,7 @@ halt:
 
     cli
     hlt
+
     jmp halt
 
 
@@ -273,20 +282,20 @@ gdt_start:
 gdt_code:
 
     dw 0xFFFF
-    dw 0
-    db 0
+    dw 0x0000
+    db 0x00
     db 10011010b
     db 11001111b
-    db 0
+    db 0x00
 
 gdt_data:
 
     dw 0xFFFF
-    dw 0
-    db 0
+    dw 0x0000
+    db 0x00
     db 10010010b
     db 11001111b
-    db 0
+    db 0x00
 
 gdt_end:
 
@@ -322,14 +331,12 @@ current_cylinder:
 sectors_left:
     db 30
 
-
 error_message:
-
     db "MatrixOS: Disk error", 0
 
 
 ; ========================================
-; Boot Signature
+; Boot signature
 ; ========================================
 
 times 510 - ($ - $$) db 0
