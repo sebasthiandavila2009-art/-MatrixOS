@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 3.0 - 10 Sector Kernel
+; Version 3.3 - 12 Sector Kernel
 
 BITS 16
 ORG 0x7C00
@@ -23,14 +23,16 @@ start:
 
     ; --------------------------------
     ; Load MatrixOS kernel
-    ; 10 sectors -> physical 0x1000
+    ; 12 sectors
+    ; Kernel starts at sector 2
+    ; Loaded to physical address 0x1000
     ; --------------------------------
 
     mov ah, 0x02
-    mov al, 0x0B
-    mov ch, 0x00
-    mov cl, 0x02
-    mov dh, 0x00
+    mov al, 12
+    mov ch, 0
+    mov cl, 2
+    mov dh, 0
     mov dl, [boot_drive]
     mov bx, 0x1000
 
@@ -61,13 +63,13 @@ start:
     or eax, 0x01
     mov cr0, eax
 
-    ; Jump to protected mode
+    ; Jump to 32-bit protected mode
     jmp 0x08:protected_mode
 
 
-; --------------------------------
-; BIOS text output
-; --------------------------------
+; ================================================
+; BIOS Text Output
+; ================================================
 
 print_string:
     lodsb
@@ -85,9 +87,9 @@ print_string:
     ret
 
 
-; --------------------------------
-; Disk error
-; --------------------------------
+; ================================================
+; Disk Error
+; ================================================
 
 disk_error:
     mov si, error_message
@@ -149,17 +151,23 @@ gdt_data:
 
 gdt_end:
 
+
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
 
 ; ================================================
-; Variables / Messages
+; Variables
 ; ================================================
 
 boot_drive:
     db 0
+
+
+; ================================================
+; Messages
+; ================================================
 
 boot_message:
     db "MATRIXOS: Bootloader OK", 13, 10, 0
@@ -171,7 +179,10 @@ error_message:
     db "MATRIXOS: Disk error", 13, 10, 0
 
 
-; Boot sector must be exactly 512 bytes
+; ================================================
+; Boot Sector
+; ================================================
+
 times 510 - ($ - $$) db 0
 
 dw 0xAA55
