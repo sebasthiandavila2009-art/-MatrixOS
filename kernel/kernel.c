@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 2.0 - MatrixBook Desktop Top Bar
+// Version 2.1 - MatrixBook Desktop
 
 extern void mouse_init(void);
 
@@ -59,7 +59,7 @@ volatile unsigned char *video_memory =
 
 
 /*
- * 5x7 font
+ * 5x7 font.
  */
 
 static const unsigned char font[26][7] =
@@ -94,7 +94,7 @@ static const unsigned char font[26][7] =
 
 
 /*
- * Get one font row.
+ * Get font row.
  */
 
 unsigned char get_font_row(char c, int row)
@@ -113,13 +113,14 @@ unsigned char get_font_row(char c, int row)
 
 
 /*
- * Draw one character.
+ * Draw character with selected color.
  */
 
 void draw_character_at(
     char c,
     int x,
-    int y)
+    int y,
+    unsigned char color)
 {
     int row;
     int col;
@@ -144,7 +145,7 @@ void draw_character_at(
                     y + row,
                     1,
                     1,
-                    15
+                    color
                 );
             }
         }
@@ -153,13 +154,14 @@ void draw_character_at(
 
 
 /*
- * Draw a text string.
+ * Draw text with selected color.
  */
 
 void draw_text(
     const char *text,
     int x,
-    int y)
+    int y,
+    unsigned char color)
 {
     while (*text)
     {
@@ -172,7 +174,8 @@ void draw_text(
             draw_character_at(
                 *text,
                 x,
-                y
+                y,
+                color
             );
 
             x += 6;
@@ -214,7 +217,8 @@ void draw_terminal_text(void)
         draw_character_at(
             c,
             x,
-            y
+            y,
+            15
         );
 
         x += 6;
@@ -241,7 +245,7 @@ void draw_terminal_text(void)
 void draw_desktop(void)
 {
     /*
-     * Desktop background.
+     * Main desktop.
      */
 
     graphics_clear(1);
@@ -258,45 +262,28 @@ void draw_desktop(void)
         0
     );
 
-    /*
-     * MatrixOS branding.
-     */
-
     draw_text(
         "MATRIXOS",
         8,
-        5
+        5,
+        15
     );
-
-    /*
-     * MatrixBook branding.
-     */
 
     draw_text(
         "MATRIXBOOK",
         252,
-        5
+        5,
+        15
     );
 
-    /*
-     * Bottom dock.
-     */
-
-    graphics_rectangle(
-        0,
-        SCREEN_HEIGHT - 16,
-        SCREEN_WIDTH,
-        16,
-        0
-    );
 
     /*
-     * Terminal icon.
+     * Terminal application.
      */
 
     graphics_rectangle(
         20,
-        40,
+        38,
         50,
         40,
         15
@@ -304,50 +291,150 @@ void draw_desktop(void)
 
     graphics_rectangle(
         28,
-        50,
+        48,
         34,
         4,
         0
     );
 
+    draw_text(
+        "TERMINAL",
+        20,
+        84,
+        15
+    );
+
+
     /*
-     * Files icon.
+     * Files application.
      */
 
     graphics_rectangle(
-        90,
-        40,
+        92,
+        38,
         50,
         40,
         15
     );
 
     graphics_rectangle(
-        98,
-        50,
+        100,
+        48,
         34,
         4,
         0
     );
 
+    draw_text(
+        "FILES",
+        101,
+        84,
+        15
+    );
+
+
     /*
-     * Settings icon.
+     * Settings application.
      */
 
     graphics_rectangle(
-        160,
-        40,
+        164,
+        38,
         50,
         40,
         15
     );
 
     graphics_rectangle(
-        168,
-        50,
+        172,
+        48,
         34,
         4,
         0
+    );
+
+    draw_text(
+        "SETTINGS",
+        165,
+        84,
+        15
+    );
+
+
+    /*
+     * About application.
+     */
+
+    graphics_rectangle(
+        236,
+        38,
+        50,
+        40,
+        15
+    );
+
+    graphics_rectangle(
+        244,
+        48,
+        34,
+        4,
+        0
+    );
+
+    draw_text(
+        "ABOUT",
+        245,
+        84,
+        15
+    );
+
+
+    /*
+     * Bottom dock.
+     */
+
+    graphics_rectangle(
+        0,
+        SCREEN_HEIGHT - 18,
+        SCREEN_WIDTH,
+        18,
+        0
+    );
+
+    /*
+     * Dock items.
+     */
+
+    graphics_rectangle(
+        110,
+        188,
+        12,
+        8,
+        15
+    );
+
+    graphics_rectangle(
+        130,
+        188,
+        12,
+        8,
+        15
+    );
+
+    graphics_rectangle(
+        150,
+        188,
+        12,
+        8,
+        15
+    );
+
+    graphics_rectangle(
+        170,
+        188,
+        12,
+        8,
+        15
     );
 }
 
@@ -384,15 +471,14 @@ void draw_terminal(void)
 
     /*
      * Terminal title.
-     *
-     * The title is drawn black
-     * over the white title bar.
+     * Black text on white.
      */
 
     draw_text(
         "TERMINAL",
         TERMINAL_X + 8,
-        TERMINAL_Y + 5
+        TERMINAL_Y + 5,
+        0
     );
 
     /*
@@ -420,7 +506,7 @@ void draw_terminal(void)
     );
 
     /*
-     * Existing terminal text.
+     * Terminal text.
      */
 
     draw_terminal_text();
@@ -654,8 +740,8 @@ int cursor_over_terminal(void)
 {
     if (cursor_x >= 20 &&
         cursor_x < 70 &&
-        cursor_y >= 40 &&
-        cursor_y < 80)
+        cursor_y >= 38 &&
+        cursor_y < 78)
     {
         return 1;
     }
