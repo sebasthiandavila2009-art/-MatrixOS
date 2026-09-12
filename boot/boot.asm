@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.1 - 30 Sector Kernel Loader
+; Version 1.2 - 30 Sector LBA Loader
 
 BITS 16
 ORG 0x7C00
@@ -50,7 +50,10 @@ start:
     int 0x13
     jc disk_error
 
+    ; ---------------------------------------------------------
     ; Enter protected mode
+    ; ---------------------------------------------------------
+
     cli
 
     lgdt [gdt_descriptor]
@@ -61,6 +64,10 @@ start:
 
     jmp 0x08:protected_mode
 
+
+; =============================================================
+; Disk Error
+; =============================================================
 
 disk_error:
 
@@ -83,8 +90,13 @@ disk_error:
 
     cli
     hlt
+
     jmp .hang
 
+
+; =============================================================
+; Protected Mode
+; =============================================================
 
 BITS 32
 
@@ -146,14 +158,15 @@ disk_address_packet:
     db 0x10
     db 0x00
 
-    ; 30 sectors x 512 bytes
-    dw 30 * 512
+    ; IMPORTANT:
+    ; This is SECTORS, not bytes.
+    dw 30
 
     ; Destination
     dw 0x1000
     dw 0x0000
 
-    ; Start at sector/LBA 1
+    ; Start at LBA 1
     dq 1
 
 
