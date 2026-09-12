@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 2.1 - Reliable CHS Kernel Loader
+; Version 2.2 - Reliable 30 Sector CHS Loader
 
 BITS 16
 ORG 0x7C00
@@ -13,17 +13,11 @@ start:
 
     mov [boot_drive], dl
 
-    ; ----------------------------------------
     ; Bootloader started
-    ; ----------------------------------------
-
     mov al, 'A'
     call print_char
 
-    ; ----------------------------------------
     ; Reset disk
-    ; ----------------------------------------
-
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
@@ -32,10 +26,7 @@ start:
     mov al, 'B'
     call print_char
 
-    ; ----------------------------------------
-    ; Get disk geometry
-    ; ----------------------------------------
-
+    ; Get BIOS disk geometry
     mov ah, 0x08
     mov dl, [boot_drive]
     int 0x13
@@ -48,19 +39,14 @@ start:
     mov [max_head], dh
 
     ; ----------------------------------------
-    ; Kernel destination
-    ;
-    ; Start at 0000:1000
-    ; Each sector advances ES by 0x20
-    ; 0x20 paragraphs = 512 bytes
+    ; Load kernel at physical address 0x1000
     ; ----------------------------------------
 
     mov ax, 0x1000
     mov es, ax
-
     xor bx, bx
 
-    ; Start after boot sector
+    ; Start at sector 2
     mov byte [current_sector], 2
     mov byte [current_head], 0
     mov word [current_cylinder], 0
@@ -71,10 +57,7 @@ start:
 
 load_sector:
 
-    ; ----------------------------------------
-    ; Read exactly ONE sector
-    ; ----------------------------------------
-
+    ; Read one sector
     mov ah, 0x02
     mov al, 1
 
@@ -86,52 +69,30 @@ load_sector:
     int 0x13
     jc retry_read
 
-    ; ----------------------------------------
-    ; Move memory destination forward 512 bytes
-    ; ----------------------------------------
+    ; Move destination forward 512 bytes
+    add bx, 512
 
-    mov ax, es
-    add ax, 0x20
-    mov es, ax
-
-    ; ----------------------------------------
-    ; One sector completed
-    ; ----------------------------------------
-
+    ; One sector finished
     dec byte [sectors_left]
-
     jz kernel_loaded
 
-    ; ----------------------------------------
     ; Next sector
-    ; ----------------------------------------
-
     inc byte [current_sector]
 
     mov al, [sectors_per_track]
-
     cmp byte [current_sector], al
     jbe load_sector
 
-    ; ----------------------------------------
-    ; Next head / track
-    ; ----------------------------------------
-
+    ; Next head
     mov byte [current_sector], 1
-
     inc byte [current_head]
 
     mov al, [max_head]
-
     cmp byte [current_head], al
     jbe load_sector
 
-    ; ----------------------------------------
     ; Next cylinder
-    ; ----------------------------------------
-
     mov byte [current_head], 0
-
     inc word [current_cylinder]
 
     jmp load_sector
@@ -139,14 +100,12 @@ load_sector:
 
 retry_read:
 
-    ; ----------------------------------------
-    ; Reset disk and retry current sector
-    ; ----------------------------------------
-
+    ; Reset disk
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
 
+    ; Retry current sector
     mov ah, 0x02
     mov al, 1
 
@@ -158,33 +117,26 @@ retry_read:
     int 0x13
     jc disk_error
 
-    ; Advance destination
-    mov ax, es
-    add ax, 0x20
-    mov es, ax
+    ; Move destination forward 512 bytes
+    add bx, 512
 
     dec byte [sectors_left]
-
     jz kernel_loaded
 
     inc byte [current_sector]
 
     mov al, [sectors_per_track]
-
     cmp byte [current_sector], al
     jbe load_sector
 
     mov byte [current_sector], 1
-
     inc byte [current_head]
 
     mov al, [max_head]
-
     cmp byte [current_head], al
     jbe load_sector
 
     mov byte [current_head], 0
-
     inc word [current_cylinder]
 
     jmp load_sector
@@ -192,17 +144,11 @@ retry_read:
 
 kernel_loaded:
 
-    ; ----------------------------------------
-    ; C = 30 sectors successfully loaded
-    ; ----------------------------------------
-
+    ; 30 sectors loaded
     mov al, 'C'
     call print_char
 
-    ; ----------------------------------------
     ; Enter protected mode
-    ; ----------------------------------------
-
     cli
 
     lgdt [gdt_descriptor]
@@ -244,7 +190,6 @@ halt:
 
     cli
     hlt
-
     jmp halt
 
 
@@ -266,6 +211,7 @@ protected_mode:
 
     mov esp, 0x90000
 
+    ; Kernel is loaded at physical 0x1000
     jmp 0x1000
 
 
@@ -336,7 +282,7 @@ error_message:
 
 
 ; ========================================
-; Boot signature
+; Boot Signature
 ; ========================================
 
 times 510 - ($ - $$) db 0
