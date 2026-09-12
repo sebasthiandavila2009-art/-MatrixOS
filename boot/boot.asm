@@ -1,11 +1,10 @@
 ; MatrixOS Bootloader
-; Version 1.3 - Reliable 30 Sector LBA Loader
+; Version 1.4 - Reliable 30 Sector LBA Loader
 
 BITS 16
 ORG 0x7C00
 
 start:
-
     cli
 
     xor ax, ax
@@ -21,68 +20,87 @@ start:
     or al, 00000010b
     out 0x92, al
 
-    ; ---------------------------------------------------------
-    ; Check BIOS LBA / EDD support
-    ; ---------------------------------------------------------
-
+    ; Check BIOS EDD / LBA support
     mov ah, 0x41
     mov bx, 0x55AA
     mov dl, [boot_drive]
-
     int 0x13
     jc disk_error
 
     cmp bx, 0xAA55
     jne disk_error
 
-    test cx, 0x0001
+    test cx, 1
     jz disk_error
 
-    ; ---------------------------------------------------------
-    ; Load MatrixOS kernel
-    ;
-    ; Start LBA: 1
-    ; Sectors: 30
-    ; Destination: 0000:1000
-    ; Total capacity: 30 x 512 = 15,360 bytes
-    ; ---------------------------------------------------------
+    ; ----------------------------------------
+    ; Read first 16 sectors
+    ; LBA 1 -> memory 0000:1000
+    ; ----------------------------------------
 
-    mov si, disk_address_packet
+    mov si, dap1
     mov dl, [boot_drive]
     mov ah, 0x42
 
     int 0x13
+    jnc read_second
+
+    ; Reset disk and retry
+    xor ah, ah
+    mov dl, [boot_drive]
+    int 0x13
+
+    mov si, dap1
+    mov dl, [boot_drive]
+    mov ah, 0x42
+    int 0x13
     jc disk_error
 
-    ; ---------------------------------------------------------
-    ; Enter protected mode
-    ; ---------------------------------------------------------
+read_second:
+
+    ; ----------------------------------------
+    ; Read remaining 14 sectors
+    ; LBA 17 -> memory 0000:3000
+    ; ----------------------------------------
+
+    mov si, dap2
+    mov dl, [boot_drive]
+    mov ah, 0x42
+
+    int 0x13
+    jnc enter_protected
+
+    ; Reset disk and retry
+    xor ah, ah
+    mov dl, [boot_drive]
+    int 0x13
+
+    mov si, dap2
+    mov dl, [boot_drive]
+    mov ah, 0x42
+    int 0x13
+    jc disk_error
+
+enter_protected:
 
     cli
 
     lgdt [gdt_descriptor]
 
     mov eax, cr0
-    or eax, 0x00000001
+    or eax, 1
     mov cr0, eax
 
     jmp 0x08:protected_mode
 
 
-; =============================================================
-; Disk Error
-; =============================================================
-
 disk_error:
-
     mov si, error_message
 
 .print:
-
     lodsb
-
-    cmp al, 0
-    je .hang
+    test al, al
+    jz .hang
 
     mov ah, 0x0E
     mov bh, 0
@@ -91,22 +109,16 @@ disk_error:
     jmp .print
 
 .hang:
-
     cli
     hlt
     jmp .hang
 
-
-; =============================================================
-; Protected Mode
-; =============================================================
 
 BITS 32
 
 protected_mode:
 
     mov ax, 0x10
-
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -118,81 +130,80 @@ protected_mode:
     jmp 0x1000
 
 
-; =============================================================
-; GDT
-; =============================================================
+BITS 16
+
+; --------------------------------------------
+; Global Descriptor Table
+; --------------------------------------------
 
 gdt_start:
 
-gdt_null:
-    dq 0x0000000000000000
+    dq 0
 
 gdt_code:
     dw 0xFFFF
-    dw 0x0000
-    db 0x00
+    dw 0
+    db 0
     db 10011010b
     db 11001111b
-    db 0x00
+    db 0
 
 gdt_data:
     dw 0xFFFF
-    dw 0x0000
-    db 0x00
+    dw 0
+    db 0
     db 10010010b
     db 11001111b
-    db 0x00
+    db 0
 
 gdt_end:
 
-
 gdt_descriptor:
-
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
 
-; =============================================================
-; BIOS Extended Disk Address Packet
-; =============================================================
-
-BITS 16
+; --------------------------------------------
+; Disk Address Packet 1
+; 16 sectors, LBA 1
+; destination 0000:1000
+; --------------------------------------------
 
 align 4
 
-disk_address_packet:
-
+dap1:
     db 0x10
-    db 0x00
-
-    ; Number of sectors
-    dw 30
-
-    ; Buffer: 0000:1000
+    db 0
+    dw 16
     dw 0x1000
-    dw 0x0000
-
-    ; Starting LBA
+    dw 0
     dq 1
 
 
-; =============================================================
-; Variables
-; =============================================================
+; --------------------------------------------
+; Disk Address Packet 2
+; 14 sectors, LBA 17
+; destination 0000:3000
+; --------------------------------------------
+
+align 4
+
+dap2:
+    db 0x10
+    db 0
+    dw 14
+    dw 0x3000
+    dw 0
+    dq 17
+
 
 boot_drive:
-
     db 0
 
 
 error_message:
-
     db "MatrixOS: Disk error", 0
 
-
-; =============================================================
-; Boot Signature
-; =============================================================
 
 times 510 - ($ - $$) db 0
 
