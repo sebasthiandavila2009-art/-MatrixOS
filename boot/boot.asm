@@ -1,12 +1,12 @@
 ; MatrixOS Bootloader
-; Version 3.4 - 16 Sector Kernel
+; Version 1.1 - 30 Sector Kernel Loader
 
 BITS 16
 ORG 0x7C00
 
 start:
+
     cli
-    cld
 
     xor ax, ax
     mov ds, ax
@@ -14,96 +14,77 @@ start:
     mov ss, ax
     mov sp, 0x7C00
 
-    ; Save BIOS boot drive
     mov [boot_drive], dl
 
-    ; Boot message
-    mov si, boot_message
-    call print_string
+    ; Enable A20
+    in al, 0x92
+    or al, 00000010b
+    out 0x92, al
 
-    ; --------------------------------
-    ; Load MatrixOS kernel
-    ; 16 sectors
-    ; Kernel starts at sector 2
-    ; Loaded to physical address 0x1000
-    ; --------------------------------
-
-    mov ah, 0x02
-    mov al, 16
-    mov ch, 0
-    mov cl, 2
-    mov dh, 0
+    ; Check BIOS LBA support
+    mov ah, 0x41
+    mov bx, 0x55AA
     mov dl, [boot_drive]
-    mov bx, 0x1000
 
     int 0x13
     jc disk_error
 
-    mov si, kernel_message
-    call print_string
+    cmp bx, 0xAA55
+    jne disk_error
 
-    ; --------------------------------
-    ; Enable VGA Mode 13h
-    ; --------------------------------
+    ; ---------------------------------------------------------
+    ; Load MatrixOS kernel
+    ;
+    ; Start LBA: 1
+    ; Sectors: 30
+    ; Destination: 0x1000
+    ;
+    ; 30 x 512 = 15,360 bytes
+    ; ---------------------------------------------------------
 
-    mov ax, 0x0013
-    int 0x10
+    mov si, disk_address_packet
 
-    ; --------------------------------
-    ; Load GDT
-    ; --------------------------------
+    mov ah, 0x42
+    mov dl, [boot_drive]
+
+    int 0x13
+    jc disk_error
+
+    ; Enter protected mode
+    cli
 
     lgdt [gdt_descriptor]
 
-    ; --------------------------------
-    ; Enable protected mode
-    ; --------------------------------
-
     mov eax, cr0
-    or eax, 0x01
+    or eax, 0x00000001
     mov cr0, eax
 
-    ; Jump to 32-bit protected mode
     jmp 0x08:protected_mode
 
 
-; ================================================
-; BIOS Text Output
-; ================================================
+disk_error:
 
-print_string:
+    mov si, error_message
+
+.print:
+
     lodsb
 
-    test al, al
-    jz .done
+    cmp al, 0
+    je .hang
 
     mov ah, 0x0E
-    mov bh, 0x00
+    mov bh, 0
     int 0x10
 
-    jmp print_string
-
-.done:
-    ret
-
-
-; ================================================
-; Disk Error
-; ================================================
-
-disk_error:
-    mov si, error_message
-    call print_string
+    jmp .print
 
 .hang:
+
     cli
     hlt
     jmp .hang
 
-
-; ================================================
-; 32-bit Protected Mode
-; ================================================
 
 BITS 32
 
@@ -119,69 +100,80 @@ protected_mode:
 
     mov esp, 0x90000
 
-    ; Jump to MatrixOS kernel
-    jmp 0x08:0x1000
+    jmp 0x1000
 
 
-; ================================================
-; Global Descriptor Table
-; ================================================
+; =============================================================
+; GDT
+; =============================================================
 
 gdt_start:
 
-    dq 0
+gdt_null:
+    dq 0x0000000000000000
 
 gdt_code:
-
     dw 0xFFFF
     dw 0x0000
     db 0x00
-    db 0x9A
-    db 0xCF
+    db 10011010b
+    db 11001111b
     db 0x00
 
 gdt_data:
-
     dw 0xFFFF
     dw 0x0000
     db 0x00
-    db 0x92
-    db 0xCF
+    db 10010010b
+    db 11001111b
     db 0x00
 
 gdt_end:
 
 
 gdt_descriptor:
+
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
 
-; ================================================
+; =============================================================
+; BIOS Extended Disk Address Packet
+; =============================================================
+
+disk_address_packet:
+
+    db 0x10
+    db 0x00
+
+    ; 30 sectors x 512 bytes
+    dw 30 * 512
+
+    ; Destination
+    dw 0x1000
+    dw 0x0000
+
+    ; Start at sector/LBA 1
+    dq 1
+
+
+; =============================================================
 ; Variables
-; ================================================
+; =============================================================
 
 boot_drive:
+
     db 0
 
 
-; ================================================
-; Messages
-; ================================================
-
-boot_message:
-    db "MATRIXOS: Bootloader OK", 13, 10, 0
-
-kernel_message:
-    db "MATRIXOS: Kernel loaded", 13, 10, 0
-
 error_message:
-    db "MATRIXOS: Disk error", 13, 10, 0
+
+    db "MatrixOS: Disk error", 0
 
 
-; ================================================
-; Boot Sector
-; ================================================
+; =============================================================
+; Boot Signature
+; =============================================================
 
 times 510 - ($ - $$) db 0
 
