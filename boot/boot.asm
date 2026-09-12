@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 3.3 - 12 Sector Kernel
+; Version 3.3 - 13 Sector Kernel
 
 BITS 16
 ORG 0x7C00
@@ -23,13 +23,13 @@ start:
 
     ; --------------------------------
     ; Load MatrixOS kernel
-    ; 12 sectors
+    ; 13 sectors
     ; Kernel starts at sector 2
     ; Loaded to physical address 0x1000
     ; --------------------------------
 
     mov ah, 0x02
-    mov al, 12
+    mov al, 13
     mov ch, 0
     mov cl, 2
     mov dh, 0
