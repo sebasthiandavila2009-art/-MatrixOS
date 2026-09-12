@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.6 - Boot Diagnostic
+; Version 1.7 - Single Sector LBA Test
 
 BITS 16
 ORG 0x7C00
@@ -19,15 +19,11 @@ start:
     mov al, 'A'
     call print_char
 
-    ; Enable A20
-    in al, 0x92
-    or al, 2
-    out 0x92, al
-
-    ; Check LBA support
+    ; Check BIOS EDD
     mov ah, 0x41
     mov bx, 0x55AA
     mov dl, [boot_drive]
+
     int 0x13
     jc error
 
@@ -37,100 +33,24 @@ start:
     test cx, 1
     jz error
 
-    ; B = LBA support works
+    ; B = EDD works
     mov al, 'B'
     call print_char
 
-    ; Read kernel
-    mov si, dap1
+    ; Read ONLY ONE sector
+    mov si, dap
     mov dl, [boot_drive]
     mov ah, 0x42
-    int 0x13
-    jc retry
 
-    ; C = first read works
+    int 0x13
+    jc error
+
+    ; C = one-sector read works
     mov al, 'C'
     call print_char
 
-    ; Read remaining kernel space
-    mov si, dap2
-    mov dl, [boot_drive]
-    mov ah, 0x42
-    int 0x13
-    jc retry2
-
-    ; D = second read works
-    mov al, 'D'
-    call print_char
-
-    ; Enter protected mode
     cli
-    lgdt [gdt_descriptor]
-
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
-
-    ; E = protected mode entry
-    jmp 0x08:protected_mode
-
-
-retry:
-    xor ah, ah
-    mov dl, [boot_drive]
-    int 0x13
-
-    mov si, dap1
-    mov dl, [boot_drive]
-    mov ah, 0x42
-    int 0x13
-    jc error
-
-    mov al, 'C'
-    call print_char
-
-    mov si, dap2
-    mov dl, [boot_drive]
-    mov ah, 0x42
-    int 0x13
-    jc error
-
-    mov al, 'D'
-    call print_char
-
-    cli
-    lgdt [gdt_descriptor]
-
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
-
-    jmp 0x08:protected_mode
-
-
-retry2:
-    xor ah, ah
-    mov dl, [boot_drive]
-    int 0x13
-
-    mov si, dap2
-    mov dl, [boot_drive]
-    mov ah, 0x42
-    int 0x13
-    jc error
-
-    mov al, 'D'
-    call print_char
-
-    cli
-    lgdt [gdt_descriptor]
-
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
-
-    jmp 0x08:protected_mode
-
+    hlt
 
 error:
     mov si, error_message
@@ -143,6 +63,10 @@ error_loop:
     call print_char
     jmp error_loop
 
+halt:
+    cli
+    hlt
+    jmp halt
 
 print_char:
     mov ah, 0x0E
@@ -151,76 +75,21 @@ print_char:
     ret
 
 
-halt:
-    cli
-    hlt
-    jmp halt
-
-
-BITS 32
-
-protected_mode:
-
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-
-    mov esp, 0x90000
-
-    jmp 0x1000
-
-
-BITS 16
-
-gdt_start:
-    dq 0
-
-gdt_code:
-    dw 0xFFFF
-    dw 0
-    db 0
-    db 10011010b
-    db 11001111b
-    db 0
-
-gdt_data:
-    dw 0xFFFF
-    dw 0
-    db 0
-    db 10010010b
-    db 11001111b
-    db 0
-
-gdt_end:
-
-gdt_descriptor:
-    dw gdt_end - gdt_start - 1
-    dd gdt_start
-
-
 align 4
 
-dap1:
+dap:
     db 0x10
-    db 0
-    dw 16
+    db 0x00
+
+    ; ONE sector
+    dw 1
+
+    ; Destination 0000:1000
     dw 0x1000
-    dw 0
+    dw 0x0000
+
+    ; LBA 1
     dq 1
-
-
-align 4
-
-dap2:
-    db 0x10
-    db 0
-    dw 14
-    dw 0x3000
-    dw 0
-    dq 17
 
 
 boot_drive:
