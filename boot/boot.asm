@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 1.4 - Reliable 30 Sector LBA Loader
+; Version 1.5 - Reliable 30 Sector LBA Loader
 
 BITS 16
 ORG 0x7C00
@@ -20,10 +20,11 @@ start:
     or al, 00000010b
     out 0x92, al
 
-    ; Check BIOS EDD / LBA support
+    ; Check BIOS Extended Disk Services
     mov ah, 0x41
     mov bx, 0x55AA
     mov dl, [boot_drive]
+
     int 0x13
     jc disk_error
 
@@ -33,19 +34,21 @@ start:
     test cx, 1
     jz disk_error
 
-    ; ----------------------------------------
-    ; Read first 16 sectors
-    ; LBA 1 -> memory 0000:1000
-    ; ----------------------------------------
+    ; -----------------------------------------
+    ; READ 1
+    ; 16 sectors
+    ; LBA 1
+    ; Destination: 0000:1000
+    ; -----------------------------------------
 
     mov si, dap1
     mov dl, [boot_drive]
     mov ah, 0x42
 
     int 0x13
-    jnc read_second
+    jnc read2
 
-    ; Reset disk and retry
+    ; Reset and retry
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
@@ -56,21 +59,24 @@ start:
     int 0x13
     jc disk_error
 
-read_second:
 
-    ; ----------------------------------------
-    ; Read remaining 14 sectors
-    ; LBA 17 -> memory 0000:3000
-    ; ----------------------------------------
+read2:
+
+    ; -----------------------------------------
+    ; READ 2
+    ; 14 sectors
+    ; LBA 17
+    ; Destination: 0000:3000
+    ; -----------------------------------------
 
     mov si, dap2
     mov dl, [boot_drive]
     mov ah, 0x42
 
     int 0x13
-    jnc enter_protected
+    jnc protected
 
-    ; Reset disk and retry
+    ; Reset and retry
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
@@ -81,7 +87,8 @@ read_second:
     int 0x13
     jc disk_error
 
-enter_protected:
+
+protected:
 
     cli
 
@@ -95,23 +102,28 @@ enter_protected:
 
 
 disk_error:
+
     mov si, error_message
 
-.print:
+print_error:
+
     lodsb
+
     test al, al
-    jz .hang
+    jz halt
 
     mov ah, 0x0E
     mov bh, 0
     int 0x10
 
-    jmp .print
+    jmp print_error
 
-.hang:
+
+halt:
+
     cli
     hlt
-    jmp .hang
+    jmp halt
 
 
 BITS 32
@@ -119,6 +131,7 @@ BITS 32
 protected_mode:
 
     mov ax, 0x10
+
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -132,9 +145,9 @@ protected_mode:
 
 BITS 16
 
-; --------------------------------------------
-; Global Descriptor Table
-; --------------------------------------------
+; -----------------------------------------
+; GDT
+; -----------------------------------------
 
 gdt_start:
 
@@ -142,66 +155,80 @@ gdt_start:
 
 gdt_code:
     dw 0xFFFF
-    dw 0
-    db 0
+    dw 0x0000
+    db 0x00
     db 10011010b
     db 11001111b
-    db 0
+    db 0x00
 
 gdt_data:
     dw 0xFFFF
-    dw 0
-    db 0
+    dw 0x0000
+    db 0x00
     db 10010010b
     db 11001111b
-    db 0
+    db 0x00
 
 gdt_end:
 
+
 gdt_descriptor:
+
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
 
-; --------------------------------------------
-; Disk Address Packet 1
-; 16 sectors, LBA 1
-; destination 0000:1000
-; --------------------------------------------
+; -----------------------------------------
+; DAP 1
+; 16 sectors
+; LBA 1
+; 0000:1000
+; -----------------------------------------
 
 align 4
 
 dap1:
+
     db 0x10
-    db 0
+    db 0x00
+
     dw 16
+
     dw 0x1000
-    dw 0
+    dw 0x0000
+
     dq 1
 
 
-; --------------------------------------------
-; Disk Address Packet 2
-; 14 sectors, LBA 17
-; destination 0000:3000
-; --------------------------------------------
+; -----------------------------------------
+; DAP 2
+; 14 sectors
+; LBA 17
+; 0000:3000
+; -----------------------------------------
 
 align 4
 
 dap2:
+
     db 0x10
-    db 0
+    db 0x00
+
     dw 14
+
     dw 0x3000
-    dw 0
+    dw 0x0000
+
     dq 17
 
 
 boot_drive:
+
     db 0
 
 
 error_message:
+
     db "MatrixOS: Disk error", 0
 
 
