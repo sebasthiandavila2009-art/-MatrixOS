@@ -1,5 +1,553 @@
 // MatrixOS Kernel
-// Version 2.1 - MatrixBook Desktop
+// Version 2.2 - Matrix Terminal Commands
+
+#define SCREEN_WIDTH  320
+#define SCREEN_HEIGHT 200
+
+#define BLUE          1
+#define WHITE         15
+#define BLACK         0
+#define LIGHT_BLUE    9
+#define GREEN         10
+#define GRAY          8
+
+volatile unsigned char *framebuffer =
+    (unsigned char *)0xA0000;
+
+
+/* =========================================================
+   Graphics
+   ========================================================= */
+
+void graphics_put_pixel(int x, int y, unsigned char color)
+{
+    if (x < 0 || x >= SCREEN_WIDTH ||
+        y < 0 || y >= SCREEN_HEIGHT)
+        return;
+
+    framebuffer[y * SCREEN_WIDTH + x] = color;
+}
+
+void graphics_clear(unsigned char color)
+{
+    for (int y = 0; y < SCREEN_HEIGHT; y++)
+    {
+        for (int x = 0; x < SCREEN_WIDTH; x++)
+        {
+            framebuffer[y * SCREEN_WIDTH + x] = color;
+        }
+    }
+}
+
+void graphics_rectangle(
+    int x,
+    int y,
+    int width,
+    int height,
+    unsigned char color)
+{
+    for (int py = y; py < y + height; py++)
+    {
+        for (int px = x; px < x + width; px++)
+        {
+            graphics_put_pixel(px, py, color);
+        }
+    }
+}
+
+
+/* =========================================================
+   5x7 Font
+   ========================================================= */
+
+static const unsigned char font[96][7] =
+{
+    {0,0,0,0,0,0,0},
+
+    {4,4,4,4,4,0,4},
+    {10,10,10,0,0,0,0},
+    {10,31,10,31,10,0,0},
+    {4,15,20,14,5,30,4},
+    {24,25,2,4,8,19,3},
+    {12,18,20,8,21,18,13},
+    {6,4,8,0,0,0,0},
+
+    {2,4,8,8,8,4,2},
+    {8,4,2,2,2,4,8},
+    {0,4,21,14,21,4,0},
+    {0,4,4,31,4,4,0},
+    {0,0,0,0,6,4,8},
+    {0,0,0,31,0,0,0},
+    {0,0,0,0,0,6,6},
+    {0,1,2,4,8,16,0},
+
+    {14,17,19,21,25,17,14},
+    {4,12,4,4,4,4,14},
+    {14,17,1,2,4,8,31},
+    {31,2,4,2,1,17,14},
+    {2,6,10,18,31,2,2},
+    {31,16,30,1,1,17,14},
+    {6,8,16,30,17,17,14},
+    {31,1,2,4,8,8,8},
+    {14,17,17,14,17,17,14},
+    {14,17,17,15,1,2,12},
+    {0,6,6,0,6,6,0},
+    {0,6,6,0,6,4,8},
+    {2,4,8,16,8,4,2},
+    {0,0,31,0,31,0,0},
+    {8,4,2,1,2,4,8},
+    {14,17,1,2,4,0,4},
+
+    {14,17,1,13,21,21,14},
+    {14,17,17,31,17,17,17},
+    {30,17,17,30,17,17,30},
+    {14,17,16,16,16,17,14},
+    {30,17,17,17,17,17,30},
+    {31,16,16,30,16,16,31},
+    {31,16,16,30,16,16,16},
+    {14,17,16,23,17,17,14},
+    {17,17,17,31,17,17,17},
+    {14,4,4,4,4,4,14},
+    {7,2,2,2,2,18,12},
+    {17,18,20,24,20,18,17},
+    {16,16,16,16,16,16,31},
+    {17,27,21,21,17,17,17},
+    {17,25,21,19,17,17,17},
+    {14,17,17,17,17,17,14},
+    {30,17,17,30,16,16,16},
+    {14,17,17,17,21,18,13},
+    {30,17,17,30,20,18,17},
+    {14,17,16,14,1,17,14},
+    {31,4,4,4,4,4,4},
+    {17,17,17,17,17,17,14},
+    {17,17,17,17,17,10,4},
+    {17,17,17,21,21,27,17},
+    {17,17,10,4,10,17,17},
+    {17,17,10,4,4,4,4},
+    {31,1,2,4,8,16,31},
+
+    {14,8,8,8,8,8,14},
+    {0,16,8,4,2,1,0},
+    {14,2,2,2,2,2,14},
+    {4,10,17,0,0,0,0},
+    {0,0,0,0,0,0,31},
+    {8,4,2,0,0,0,0},
+
+    {0,0,14,1,15,17,15},
+    {16,16,22,25,17,17,30},
+    {0,0,14,17,16,17,14},
+    {1,1,13,19,17,17,15},
+    {0,0,14,17,31,16,14},
+    {6,9,8,28,8,8,8},
+    {0,0,15,17,17,15,1},
+    {16,16,22,25,17,17,17},
+    {4,0,12,4,4,4,14},
+    {2,0,6,2,2,18,12},
+    {16,16,18,20,24,20,18},
+    {12,4,4,4,4,4,14},
+    {0,0,26,21,21,17,17},
+    {0,0,30,17,17,17,17},
+    {0,0,14,17,17,17,14},
+    {0,0,30,17,17,30,16},
+    {0,0,13,19,17,15,1},
+    {0,0,22,25,16,16,16},
+    {0,0,15,16,14,1,30},
+    {8,8,28,8,8,9,6},
+    {0,0,17,17,17,19,13},
+    {0,0,17,17,17,10,4},
+    {0,0,17,17,21,21,10},
+    {0,0,17,10,4,10,17},
+    {0,0,17,17,15,1,14},
+    {0,0,31,2,4,8,31},
+
+    {2,4,8,8,8,4,2},
+    {4,4,4,4,4,4,4},
+    {8,4,2,2,2,4,8},
+    {8,21,2,0,0,0,0},
+    {31,31,31,31,31,31,31}
+};
+
+
+/* =========================================================
+   Text
+   ========================================================= */
+
+void draw_character_at(
+    int x,
+    int y,
+    char c,
+    unsigned char color)
+{
+    if (c < 32 || c > 127)
+        return;
+
+    const unsigned char *glyph = font[c - 32];
+
+    for (int row = 0; row < 7; row++)
+    {
+        for (int col = 0; col < 5; col++)
+        {
+            if (glyph[row] & (1 << (4 - col)))
+            {
+                graphics_put_pixel(
+                    x + col,
+                    y + row,
+                    color
+                );
+            }
+        }
+    }
+}
+
+void draw_text(
+    int x,
+    int y,
+    const char *text,
+    unsigned char color)
+{
+    while (*text)
+    {
+        draw_character_at(x, y, *text, color);
+        x += 6;
+        text++;
+    }
+}
+
+
+/* =========================================================
+   Desktop
+   ========================================================= */
+
+void draw_terminal_icon(int x, int y)
+{
+    graphics_rectangle(x, y, 42, 32, BLACK);
+    graphics_rectangle(x + 2, y + 2, 38, 28, WHITE);
+
+    draw_character_at(x + 7, y + 9, '>', BLACK);
+    draw_character_at(x + 14, y + 9, '_', BLACK);
+}
+
+void draw_files_icon(int x, int y)
+{
+    graphics_rectangle(x, y + 5, 42, 27, WHITE);
+    graphics_rectangle(x + 5, y, 19, 8, WHITE);
+}
+
+void draw_settings_icon(int x, int y)
+{
+    graphics_rectangle(x + 5, y + 5, 32, 22, GRAY);
+    graphics_rectangle(x + 13, y + 9, 16, 14, BLACK);
+}
+
+void draw_about_icon(int x, int y)
+{
+    graphics_rectangle(x, y, 42, 32, LIGHT_BLUE);
+    draw_character_at(x + 18, y + 5, 'i', WHITE);
+}
+
+void draw_desktop(void)
+{
+    graphics_clear(BLUE);
+
+    /* Top bar */
+    graphics_rectangle(
+        0, 0,
+        SCREEN_WIDTH, 18,
+        BLACK
+    );
+
+    draw_text(
+        8, 5,
+        "MATRIXBOOK",
+        WHITE
+    );
+
+    draw_text(
+        250, 5,
+        "MATRIXOS",
+        WHITE
+    );
+
+    /* App icons */
+    draw_terminal_icon(20, 35);
+    draw_files_icon(100, 35);
+    draw_settings_icon(180, 35);
+    draw_about_icon(260, 35);
+
+    draw_text(20, 72, "TERMINAL", WHITE);
+    draw_text(104, 72, "FILES", WHITE);
+    draw_text(181, 72, "SETTINGS", WHITE);
+    draw_text(266, 72, "ABOUT", WHITE);
+
+    /* Dock */
+    graphics_rectangle(
+        45, 170,
+        230, 25,
+        BLACK
+    );
+
+    draw_text(
+        58, 179,
+        "TERMINAL",
+        WHITE
+    );
+}
+
+
+/* =========================================================
+   Terminal
+   ========================================================= */
+
+static int terminal_open = 0;
+
+static char terminal_input[64];
+static int terminal_length = 0;
+
+void terminal_draw(void)
+{
+    /* Window */
+    graphics_rectangle(
+        25, 25,
+        270, 140,
+        WHITE
+    );
+
+    /* Title bar */
+    graphics_rectangle(
+        25, 25,
+        270, 16,
+        BLACK
+    );
+
+    draw_text(
+        33, 30,
+        "MATRIX TERMINAL",
+        WHITE
+    );
+
+    /* Close button */
+    graphics_rectangle(
+        279, 29,
+        10, 8,
+        GRAY
+    );
+
+    /* Terminal background */
+    graphics_rectangle(
+        30, 45,
+        260, 115,
+        BLACK
+    );
+
+    draw_text(
+        37, 52,
+        "MatrixOS Terminal",
+        GREEN
+    );
+
+    draw_text(
+        37, 64,
+        "Type 'help' for commands.",
+        WHITE
+    );
+
+    draw_text(
+        37, 82,
+        "matrix@matrixbook:~$",
+        GREEN
+    );
+
+    draw_text(
+        37 + (20 * 6),
+        82,
+        terminal_input,
+        WHITE
+    );
+
+    /* Cursor */
+    graphics_rectangle(
+        37 + (20 * 6) +
+        (terminal_length * 6),
+        81,
+        5,
+        8,
+        WHITE
+    );
+}
+
+
+/* =========================================================
+   Terminal Commands
+   ========================================================= */
+
+void terminal_print_command(const char *command)
+{
+    if (command[0] == 'h' &&
+        command[1] == 'e' &&
+        command[2] == 'l' &&
+        command[3] == 'p' &&
+        command[4] == 0)
+    {
+        graphics_rectangle(
+            30, 95,
+            260, 65,
+            BLACK
+        );
+
+        draw_text(
+            37, 98,
+            "MATRIXOS COMMANDS",
+            GREEN
+        );
+
+        draw_text(
+            37, 110,
+            "help",
+            WHITE
+        );
+
+        draw_text(
+            80, 110,
+            "- Show commands",
+            WHITE
+        );
+
+        draw_text(
+            37, 122,
+            "about",
+            WHITE
+        );
+
+        draw_text(
+            80, 122,
+            "- About MatrixOS",
+            WHITE
+        );
+
+        draw_text(
+            37, 134,
+            "clear",
+            WHITE
+        );
+
+        draw_text(
+            80, 134,
+            "- Clear terminal",
+            WHITE
+        );
+
+        draw_text(
+            37, 146,
+            "exit",
+            WHITE
+        );
+
+        draw_text(
+            80, 146,
+            "- Close terminal",
+            WHITE
+        );
+
+        return;
+    }
+
+    if (command[0] == 'a' &&
+        command[1] == 'b' &&
+        command[2] == 'o' &&
+        command[3] == 'u' &&
+        command[4] == 't' &&
+        command[5] == 0)
+    {
+        graphics_rectangle(
+            30, 95,
+            260, 65,
+            BLACK
+        );
+
+        draw_text(
+            37, 100,
+            "MATRIXOS",
+            GREEN
+        );
+
+        draw_text(
+            37, 112,
+            "MatrixBook Desktop",
+            WHITE
+        );
+
+        draw_text(
+            37, 124,
+            "Version 2.2",
+            WHITE
+        );
+
+        draw_text(
+            37, 136,
+            "Built by MatrixOS Co.",
+            WHITE
+        );
+
+        return;
+    }
+
+    if (command[0] == 'c' &&
+        command[1] == 'l' &&
+        command[2] == 'e' &&
+        command[3] == 'a' &&
+        command[4] == 'r' &&
+        command[5] == 0)
+    {
+        graphics_rectangle(
+            30, 95,
+            260, 65,
+            BLACK
+        );
+
+        return;
+    }
+
+    if (command[0] == 'e' &&
+        command[1] == 'x' &&
+        command[2] == 'i' &&
+        command[3] == 't' &&
+        command[4] == 0)
+    {
+        terminal_open = 0;
+        draw_desktop();
+        return;
+    }
+
+    graphics_rectangle(
+        30, 95,
+        260, 65,
+        BLACK
+    );
+
+    draw_text(
+        37, 105,
+        "Command not found.",
+        WHITE
+    );
+
+    draw_text(
+        37, 117,
+        "Type 'help'.",
+        GREEN
+    );
+}
+
+
+/* =========================================================
+   Keyboard
+   ========================================================= */
+
+extern char keyboard_get_char(void);
+
+
+/* =========================================================
+   Mouse
+   ========================================================= */
 
 extern void mouse_init(void);
 
@@ -9,943 +557,163 @@ extern int mouse_get_packet(
     unsigned char *buttons
 );
 
-extern char keyboard_get_char(void);
+static int mouse_x = 160;
+static int mouse_y = 100;
 
-extern void graphics_clear(unsigned char color);
+static unsigned char mouse_buttons = 0;
+static unsigned char previous_buttons = 0;
 
-extern void graphics_rectangle(
-    int x,
-    int y,
-    int width,
-    int height,
-    unsigned char color
-);
 
-#define SCREEN_WIDTH  320
-#define SCREEN_HEIGHT 200
-
-#define TERMINAL_X       35
-#define TERMINAL_Y       25
-#define TERMINAL_WIDTH   250
-#define TERMINAL_HEIGHT  140
-
-#define TEXT_START_X     50
-#define TEXT_START_Y     60
-
-#define CURSOR_WIDTH     20
-#define CURSOR_HEIGHT    22
-
-#define MAX_TEXT         512
-
-int cursor_x = 160;
-int cursor_y = 100;
-
-int terminal_open = 0;
-
-int text_x = TEXT_START_X;
-int text_y = TEXT_START_Y;
-
-static char terminal_text[MAX_TEXT];
-int terminal_text_length = 0;
-
-static unsigned char cursor_background[
-    CURSOR_WIDTH * CURSOR_HEIGHT
-];
-
-static int cursor_visible = 0;
-
-volatile unsigned char *video_memory =
-    (volatile unsigned char *)0xA0000;
-
-
-/*
- * 5x7 font.
- */
-
-static const unsigned char font[26][7] =
-{
-    {14,17,17,31,17,17,17},
-    {30,17,17,30,17,17,30},
-    {14,17,16,16,16,17,14},
-    {30,17,17,17,17,17,30},
-    {31,16,16,30,16,16,31},
-    {31,16,16,30,16,16,16},
-    {14,17,16,23,17,17,15},
-    {17,17,17,31,17,17,17},
-    {31,4,4,4,4,4,31},
-    {7,2,2,2,18,18,12},
-    {17,18,20,24,20,18,17},
-    {16,16,16,16,16,16,31},
-    {17,27,21,21,17,17,17},
-    {17,25,21,19,17,17,17},
-    {14,17,17,17,17,17,14},
-    {30,17,17,30,16,16,16},
-    {14,17,17,17,21,18,13},
-    {30,17,17,30,20,18,17},
-    {15,16,16,14,1,1,30},
-    {31,4,4,4,4,4,4},
-    {17,17,17,17,17,17,14},
-    {17,17,17,17,17,10,4},
-    {17,17,17,21,21,21,10},
-    {17,17,10,4,10,17,17},
-    {17,17,10,4,4,4,4},
-    {31,1,2,4,8,16,31}
-};
-
-
-/*
- * Get font row.
- */
-
-unsigned char get_font_row(char c, int row)
-{
-    if (c >= 'a' && c <= 'z')
-        c -= 32;
-
-    if (c < 'A' || c > 'Z')
-        return 0;
-
-    if (row < 0 || row >= 7)
-        return 0;
-
-    return font[c - 'A'][row];
-}
-
-
-/*
- * Draw character with selected color.
- */
-
-void draw_character_at(
-    char c,
-    int x,
-    int y,
-    unsigned char color)
-{
-    int row;
-    int col;
-
-    if (c >= 'a' && c <= 'z')
-        c -= 32;
-
-    if (c < 'A' || c > 'Z')
-        return;
-
-    for (row = 0; row < 7; row++)
-    {
-        unsigned char pattern =
-            get_font_row(c, row);
-
-        for (col = 0; col < 5; col++)
-        {
-            if (pattern & (1 << (4 - col)))
-            {
-                graphics_rectangle(
-                    x + col,
-                    y + row,
-                    1,
-                    1,
-                    color
-                );
-            }
-        }
-    }
-}
-
-
-/*
- * Draw text with selected color.
- */
-
-void draw_text(
-    const char *text,
-    int x,
-    int y,
-    unsigned char color)
-{
-    while (*text)
-    {
-        if (*text == ' ')
-        {
-            x += 6;
-        }
-        else
-        {
-            draw_character_at(
-                *text,
-                x,
-                y,
-                color
-            );
-
-            x += 6;
-        }
-
-        text++;
-    }
-}
-
-
-/*
- * Draw terminal text.
- */
-
-void draw_terminal_text(void)
-{
-    int i;
-
-    int x = TEXT_START_X;
-    int y = TEXT_START_Y;
-
-    for (i = 0; i < terminal_text_length; i++)
-    {
-        char c = terminal_text[i];
-
-        if (c == '\n')
-        {
-            x = TEXT_START_X;
-            y += 10;
-            continue;
-        }
-
-        if (c == ' ')
-        {
-            x += 6;
-            continue;
-        }
-
-        draw_character_at(
-            c,
-            x,
-            y,
-            15
-        );
-
-        x += 6;
-
-        if (x > 265)
-        {
-            x = TEXT_START_X;
-            y += 10;
-        }
-
-        if (y > 145)
-            break;
-    }
-
-    text_x = x;
-    text_y = y;
-}
-
-
-/*
- * Draw MatrixBook desktop.
- */
-
-void draw_desktop(void)
-{
-    /*
-     * Main desktop.
-     */
-
-    graphics_clear(1);
-
-    /*
-     * Top bar.
-     */
-
-    graphics_rectangle(
-        0,
-        0,
-        SCREEN_WIDTH,
-        18,
-        0
-    );
-
-    draw_text(
-        "MATRIXOS",
-        8,
-        5,
-        15
-    );
-
-    draw_text(
-        "MATRIXBOOK",
-        252,
-        5,
-        15
-    );
-
-
-    /*
-     * Terminal application.
-     */
-
-    graphics_rectangle(
-        20,
-        38,
-        50,
-        40,
-        15
-    );
-
-    graphics_rectangle(
-        28,
-        48,
-        34,
-        4,
-        0
-    );
-
-    draw_text(
-        "TERMINAL",
-        20,
-        84,
-        15
-    );
-
-
-    /*
-     * Files application.
-     */
-
-    graphics_rectangle(
-        92,
-        38,
-        50,
-        40,
-        15
-    );
-
-    graphics_rectangle(
-        100,
-        48,
-        34,
-        4,
-        0
-    );
-
-    draw_text(
-        "FILES",
-        101,
-        84,
-        15
-    );
-
-
-    /*
-     * Settings application.
-     */
-
-    graphics_rectangle(
-        164,
-        38,
-        50,
-        40,
-        15
-    );
-
-    graphics_rectangle(
-        172,
-        48,
-        34,
-        4,
-        0
-    );
-
-    draw_text(
-        "SETTINGS",
-        165,
-        84,
-        15
-    );
-
-
-    /*
-     * About application.
-     */
-
-    graphics_rectangle(
-        236,
-        38,
-        50,
-        40,
-        15
-    );
-
-    graphics_rectangle(
-        244,
-        48,
-        34,
-        4,
-        0
-    );
-
-    draw_text(
-        "ABOUT",
-        245,
-        84,
-        15
-    );
-
-
-    /*
-     * Bottom dock.
-     */
-
-    graphics_rectangle(
-        0,
-        SCREEN_HEIGHT - 18,
-        SCREEN_WIDTH,
-        18,
-        0
-    );
-
-    /*
-     * Dock items.
-     */
-
-    graphics_rectangle(
-        110,
-        188,
-        12,
-        8,
-        15
-    );
-
-    graphics_rectangle(
-        130,
-        188,
-        12,
-        8,
-        15
-    );
-
-    graphics_rectangle(
-        150,
-        188,
-        12,
-        8,
-        15
-    );
-
-    graphics_rectangle(
-        170,
-        188,
-        12,
-        8,
-        15
-    );
-}
-
-
-/*
- * Draw Terminal window.
- */
-
-void draw_terminal(void)
-{
-    /*
-     * Window.
-     */
-
-    graphics_rectangle(
-        TERMINAL_X,
-        TERMINAL_Y,
-        TERMINAL_WIDTH,
-        TERMINAL_HEIGHT,
-        0
-    );
-
-    /*
-     * Title bar.
-     */
-
-    graphics_rectangle(
-        TERMINAL_X,
-        TERMINAL_Y,
-        TERMINAL_WIDTH,
-        18,
-        15
-    );
-
-    /*
-     * Terminal title.
-     * Black text on white.
-     */
-
-    draw_text(
-        "TERMINAL",
-        TERMINAL_X + 8,
-        TERMINAL_Y + 5,
-        0
-    );
-
-    /*
-     * Close button.
-     */
-
-    graphics_rectangle(
-        268,
-        29,
-        10,
-        10,
-        4
-    );
-
-    /*
-     * Terminal display.
-     */
-
-    graphics_rectangle(
-        45,
-        50,
-        230,
-        105,
-        0
-    );
-
-    /*
-     * Terminal text.
-     */
-
-    draw_terminal_text();
-
-    /*
-     * Terminal cursor.
-     */
-
-    graphics_rectangle(
-        text_x,
-        text_y,
-        2,
-        7,
-        10
-    );
-}
-
-
-/*
- * Save pixels underneath cursor.
- */
-
-void cursor_save_background(void)
-{
-    int x;
-    int y;
-
-    for (y = 0; y < CURSOR_HEIGHT; y++)
-    {
-        for (x = 0; x < CURSOR_WIDTH; x++)
-        {
-            int px = cursor_x + x;
-            int py = cursor_y + y;
-
-            if (px >= 0 &&
-                px < SCREEN_WIDTH &&
-                py >= 0 &&
-                py < SCREEN_HEIGHT)
-            {
-                cursor_background[
-                    y * CURSOR_WIDTH + x
-                ] =
-                    video_memory[
-                        py * SCREEN_WIDTH + px
-                    ];
-            }
-            else
-            {
-                cursor_background[
-                    y * CURSOR_WIDTH + x
-                ] = 0;
-            }
-        }
-    }
-}
-
-
-/*
- * Restore pixels underneath cursor.
- */
-
-void cursor_restore_background(void)
-{
-    int x;
-    int y;
-
-    if (!cursor_visible)
-        return;
-
-    for (y = 0; y < CURSOR_HEIGHT; y++)
-    {
-        for (x = 0; x < CURSOR_WIDTH; x++)
-        {
-            int px = cursor_x + x;
-            int py = cursor_y + y;
-
-            if (px >= 0 &&
-                px < SCREEN_WIDTH &&
-                py >= 0 &&
-                py < SCREEN_HEIGHT)
-            {
-                video_memory[
-                    py * SCREEN_WIDTH + px
-                ] =
-                    cursor_background[
-                        y * CURSOR_WIDTH + x
-                    ];
-            }
-        }
-    }
-
-    cursor_visible = 0;
-}
-
-
-/*
- * Draw MatrixOS cursor.
- */
+/* =========================================================
+   Mouse Cursor
+   ========================================================= */
 
 void draw_cursor(void)
 {
-    int x = cursor_x;
-    int y = cursor_y;
-
-    /*
-     * Black outline.
-     */
-
-    graphics_rectangle(x, y, 2, 18, 0);
-    graphics_rectangle(x + 2, y + 2, 2, 16, 0);
-    graphics_rectangle(x + 4, y + 4, 2, 14, 0);
-    graphics_rectangle(x + 6, y + 6, 2, 12, 0);
-    graphics_rectangle(x + 8, y + 8, 2, 10, 0);
-    graphics_rectangle(x + 10, y + 10, 2, 8, 0);
-    graphics_rectangle(x + 12, y + 12, 2, 8, 0);
-    graphics_rectangle(x + 14, y + 14, 2, 6, 0);
-    graphics_rectangle(x + 16, y + 16, 2, 4, 0);
-
-    graphics_rectangle(
-        x + 8,
-        y + 16,
-        10,
-        4,
-        0
-    );
-
-    /*
-     * White interior.
-     */
-
-    graphics_rectangle(
-        x + 2,
-        y + 2,
-        2,
-        12,
-        15
-    );
-
-    graphics_rectangle(
-        x + 4,
-        y + 4,
-        2,
-        11,
-        15
-    );
-
-    graphics_rectangle(
-        x + 6,
-        y + 6,
-        2,
-        10,
-        15
-    );
-
-    graphics_rectangle(
-        x + 8,
-        y + 8,
-        2,
-        9,
-        15
-    );
-
-    graphics_rectangle(
-        x + 10,
-        y + 10,
-        2,
-        7,
-        15
-    );
-
-    graphics_rectangle(
-        x + 12,
-        y + 12,
-        2,
-        6,
-        15
-    );
-
-    cursor_visible = 1;
-}
-
-
-/*
- * Erase cursor.
- */
-
-void cursor_erase(void)
-{
-    cursor_restore_background();
-}
-
-
-/*
- * Show cursor.
- */
-
-void cursor_show(void)
-{
-    if (cursor_visible)
-        return;
-
-    cursor_save_background();
-    draw_cursor();
-}
-
-
-/*
- * Redraw entire screen.
- */
-
-void redraw_screen(void)
-{
-    cursor_erase();
-
-    draw_desktop();
-
-    if (terminal_open)
+    for (int i = 0; i < 8; i++)
     {
-        draw_terminal();
-    }
+        graphics_put_pixel(
+            mouse_x,
+            mouse_y + i,
+            WHITE
+        );
 
-    cursor_show();
-}
-
-
-/*
- * Is cursor over Terminal?
- */
-
-int cursor_over_terminal(void)
-{
-    if (cursor_x >= 20 &&
-        cursor_x < 70 &&
-        cursor_y >= 38 &&
-        cursor_y < 78)
-    {
-        return 1;
-    }
-
-    return 0;
-}
-
-
-/*
- * Is cursor over Terminal close?
- */
-
-int cursor_over_close(void)
-{
-    if (cursor_x >= 268 &&
-        cursor_x < 278 &&
-        cursor_y >= 29 &&
-        cursor_y < 39)
-    {
-        return 1;
-    }
-
-    return 0;
-}
-
-
-/*
- * Open Terminal.
- */
-
-void open_terminal(void)
-{
-    terminal_open = 1;
-
-    redraw_screen();
-}
-
-
-/*
- * Close Terminal.
- */
-
-void close_terminal(void)
-{
-    terminal_open = 0;
-
-    redraw_screen();
-}
-
-
-/*
- * Add terminal character.
- */
-
-void add_terminal_character(char key)
-{
-    if (terminal_text_length >= MAX_TEXT - 1)
-        return;
-
-    terminal_text[
-        terminal_text_length
-    ] = key;
-
-    terminal_text_length++;
-}
-
-
-/*
- * Keyboard handler.
- */
-
-void handle_keyboard(void)
-{
-    char key;
-
-    key = keyboard_get_char();
-
-    if (key == 0)
-        return;
-
-    if (key == '\b')
-    {
-        if (terminal_text_length > 0)
+        if (i < 5)
         {
-            terminal_text_length--;
-
-            redraw_screen();
+            graphics_put_pixel(
+                mouse_x + i,
+                mouse_y + i,
+                WHITE
+            );
         }
-
-        return;
-    }
-
-    if (key == '\n')
-    {
-        add_terminal_character('\n');
-
-        redraw_screen();
-
-        return;
-    }
-
-    if ((key >= 'a' && key <= 'z') ||
-        (key >= 'A' && key <= 'Z') ||
-        key == ' ')
-    {
-        add_terminal_character(key);
-
-        redraw_screen();
     }
 }
 
 
-/*
- * MatrixOS kernel.
- */
+/* =========================================================
+   Main Kernel
+   ========================================================= */
 
 void kernel_main(void)
 {
-    int dx;
-    int dy;
-
-    unsigned char buttons;
-    unsigned char old_buttons = 0;
+    graphics_clear(BLUE);
 
     mouse_init();
 
     draw_desktop();
 
-    cursor_show();
+    draw_cursor();
 
     while (1)
     {
-        /*
-         * Keyboard.
-         */
-
-        if (terminal_open)
-        {
-            handle_keyboard();
-        }
-
-        /*
-         * Mouse.
-         */
+        int dx;
+        int dy;
+        unsigned char buttons;
 
         if (mouse_get_packet(
                 &dx,
                 &dy,
                 &buttons))
         {
-            int new_left_click =
-                ((buttons & 1) &&
-                 !(old_buttons & 1));
+            mouse_x += dx;
+            mouse_y -= dy;
 
-            cursor_erase();
+            if (mouse_x < 0)
+                mouse_x = 0;
 
-            cursor_x += dx;
-            cursor_y -= dy;
+            if (mouse_x >= SCREEN_WIDTH)
+                mouse_x = SCREEN_WIDTH - 1;
 
-            /*
-             * Keep cursor inside screen.
-             */
+            if (mouse_y < 18)
+                mouse_y = 18;
 
-            if (cursor_x < 0)
-                cursor_x = 0;
+            if (mouse_y >= SCREEN_HEIGHT)
+                mouse_y = SCREEN_HEIGHT - 1;
 
-            if (cursor_x >
-                SCREEN_WIDTH - CURSOR_WIDTH)
-            {
-                cursor_x =
-                    SCREEN_WIDTH - CURSOR_WIDTH;
-            }
+            mouse_buttons = buttons;
 
-            if (cursor_y < 0)
-                cursor_y = 0;
-
-            if (cursor_y >
-                SCREEN_HEIGHT - CURSOR_HEIGHT)
-            {
-                cursor_y =
-                    SCREEN_HEIGHT - CURSOR_HEIGHT;
-            }
-
-            /*
-             * Handle clicks.
-             */
-
-            if (new_left_click)
+            /* Left-click */
+            if ((mouse_buttons & 1) &&
+                !(previous_buttons & 1))
             {
                 if (!terminal_open &&
-                    cursor_over_terminal())
+                    mouse_x >= 15 &&
+                    mouse_x <= 70 &&
+                    mouse_y >= 30 &&
+                    mouse_y <= 75)
                 {
-                    open_terminal();
+                    terminal_open = 1;
+                    terminal_length = 0;
+                    terminal_input[0] = 0;
+
+                    terminal_draw();
                 }
+
                 else if (terminal_open &&
-                         cursor_over_close())
+                         mouse_x >= 275 &&
+                         mouse_x <= 292 &&
+                         mouse_y >= 25 &&
+                         mouse_y <= 45)
                 {
-                    close_terminal();
+                    terminal_open = 0;
+                    draw_desktop();
                 }
             }
 
-            old_buttons = buttons;
+            previous_buttons = mouse_buttons;
 
-            cursor_show();
+            if (terminal_open)
+                terminal_draw();
+            else
+                draw_desktop();
+
+            draw_cursor();
+        }
+
+        if (terminal_open)
+        {
+            char c = keyboard_get_char();
+
+            if (c)
+            {
+                if (c == '\b')
+                {
+                    if (terminal_length > 0)
+                    {
+                        terminal_length--;
+
+                        terminal_input[
+                            terminal_length
+                        ] = 0;
+                    }
+                }
+
+                else if (c == '\n')
+                {
+                    terminal_print_command(
+                        terminal_input
+                    );
+
+                    terminal_length = 0;
+                    terminal_input[0] = 0;
+                }
+
+                else if (terminal_length < 63)
+                {
+                    terminal_input[
+                        terminal_length
+                    ] = c;
+
+                    terminal_length++;
+
+                    terminal_input[
+                        terminal_length
+                    ] = 0;
+                }
+
+                terminal_draw();
+                draw_cursor();
+            }
         }
     }
 }
