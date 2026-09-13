@@ -1,6 +1,6 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 2.6 - Clean Protected Mode
+; Version 2.7 - Simple 18 Sector Boot
 ; ========================================
 
 BITS 16
@@ -52,60 +52,15 @@ start:
     mov es, ax
     mov bx, 0x1000
 
+    ; Kernel is 8004 bytes = 16 sectors
+    ; Disk sector 1 is the bootloader
+    ; Therefore load sectors 2 through 17
     mov byte [current_sector], 2
     mov byte [current_head], 0
     mov word [current_cylinder], 0
-
-    ; Load 30 sectors
-    mov byte [sectors_left], 30
-
+    mov byte [sectors_left], 16
 
 load_sector:
-
-    mov ah, 0x02
-    mov al, 1
-
-    mov ch, byte [current_cylinder]
-    mov cl, byte [current_sector]
-    mov dh, byte [current_head]
-    mov dl, [boot_drive]
-
-    int 0x13
-    jc retry_read
-
-    add bx, 512
-
-    dec byte [sectors_left]
-    jz kernel_loaded
-
-    inc byte [current_sector]
-
-    mov al, [sectors_per_track]
-
-    cmp byte [current_sector], al
-    jbe load_sector
-
-    mov byte [current_sector], 1
-
-    inc byte [current_head]
-
-    mov al, [max_head]
-
-    cmp byte [current_head], al
-    jbe load_sector
-
-    mov byte [current_head], 0
-
-    inc word [current_cylinder]
-
-    jmp load_sector
-
-
-retry_read:
-
-    xor ah, ah
-    mov dl, [boot_drive]
-    int 0x13
 
     mov ah, 0x02
     mov al, 1
@@ -152,6 +107,7 @@ kernel_loaded:
     mov al, 'C'
     call print_char
 
+    ; Disable interrupts
     cli
 
     ; Load GDT
@@ -162,8 +118,21 @@ kernel_loaded:
     or eax, 1
     mov cr0, eax
 
-    ; Far jump into protected mode
-    jmp CODE_SELECTOR:protected_mode
+    ; 32-bit far jump
+    jmp dword CODE_SELECTOR:protected_mode
+
+
+; ========================================
+; BIOS text output
+; ========================================
+
+print_char:
+
+    mov ah, 0x0E
+    mov bh, 0
+    int 0x10
+
+    ret
 
 
 ; ========================================
@@ -193,19 +162,6 @@ halt:
 
 
 ; ========================================
-; BIOS text output
-; ========================================
-
-print_char:
-
-    mov ah, 0x0E
-    mov bh, 0
-    int 0x10
-
-    ret
-
-
-; ========================================
 ; Protected Mode
 ; ========================================
 
@@ -216,7 +172,7 @@ protected_mode:
     ; D = protected mode reached
     mov word [0xB8000], 0x0F44
 
-    ; Load data selector
+    ; Load data segment
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -225,14 +181,15 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Protected-mode stack
+    ; Set protected-mode stack
     mov esp, 0x90000
 
-    ; E = kernel jump
+    ; E = ready to jump to kernel
     mov word [0xB8002], 0x0F45
 
-    ; Jump to kernel
-    jmp 0x1000
+    ; Jump directly to loaded kernel
+    mov eax, 0x1000
+    jmp eax
 
 
 ; ========================================
@@ -301,7 +258,7 @@ current_cylinder:
     dw 0
 
 sectors_left:
-    db 30
+    db 16
 
 error_message:
     db "MatrixOS: Disk error", 0
