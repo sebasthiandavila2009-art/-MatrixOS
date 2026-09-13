@@ -1,13 +1,10 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 2.8 - Simple CHS Boot
+; Version 2.9 - Boot Diagnostic
 ; ========================================
 
 BITS 16
 ORG 0x7C00
-
-CODE_SELECTOR equ 0x08
-DATA_SELECTOR equ 0x10
 
 start:
 
@@ -21,35 +18,42 @@ start:
 
     mov [boot_drive], dl
 
-    ; Show A
+    ; ----------------------------
+    ; A = bootloader started
+    ; ----------------------------
+
     mov al, 'A'
     call print_char
 
+    ; ----------------------------
     ; Reset disk
+    ; ----------------------------
+
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
     jc disk_error
 
-    ; Show B
+    ; ----------------------------
+    ; B = disk reset worked
+    ; ----------------------------
+
     mov al, 'B'
     call print_char
 
+    ; ----------------------------
     ; Load kernel
-    ; Kernel size: 8004 bytes
-    ; 16 sectors are required.
-    ;
-    ; Sector 1 = bootloader
-    ; Sectors 2-17 = kernel
+    ; ----------------------------
 
     xor ax, ax
     mov es, ax
+
     mov bx, 0x1000
 
     mov byte [sector], 2
     mov byte [sectors_left], 16
 
-load_loop:
+load_kernel:
 
     mov ah, 0x02
     mov al, 1
@@ -68,30 +72,38 @@ load_loop:
     inc byte [sector]
 
     dec byte [sectors_left]
-    jnz load_loop
+    jnz load_kernel
 
-    ; Show C
+    ; ----------------------------
+    ; C = kernel completely loaded
+    ; ----------------------------
+
     mov al, 'C'
     call print_char
 
-    ; ====================================
-    ; Protected mode
-    ; ====================================
+    ; ----------------------------
+    ; D = bootloader continues
+    ; ----------------------------
+
+    mov al, 'D'
+    call print_char
+
+    ; ----------------------------
+    ; E = bootloader finished
+    ; ----------------------------
+
+    mov al, 'E'
+    call print_char
+
+halt:
 
     cli
-
-    lgdt [gdt_descriptor]
-
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
-
-    ; Far jump into 32-bit code
-    jmp CODE_SELECTOR:protected_mode
+    hlt
+    jmp halt
 
 
 ; ========================================
-; BIOS text output
+; BIOS Text Output
 ; ========================================
 
 print_char:
@@ -104,7 +116,7 @@ print_char:
 
 
 ; ========================================
-; Disk error
+; Disk Error
 ; ========================================
 
 disk_error:
@@ -120,84 +132,6 @@ error_loop:
 
     call print_char
     jmp error_loop
-
-
-halt:
-
-    cli
-    hlt
-    jmp halt
-
-
-; ========================================
-; Protected Mode
-; ========================================
-
-BITS 32
-
-protected_mode:
-
-    ; Show D
-    mov word [0xB8000], 0x0F44
-
-    ; Data segment
-    mov ax, DATA_SELECTOR
-
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-
-    ; Stack
-    mov esp, 0x90000
-
-    ; Show E
-    mov word [0xB8002], 0x0F45
-
-    ; Jump to kernel
-    mov eax, 0x1000
-    jmp eax
-
-
-; ========================================
-; GDT
-; ========================================
-
-BITS 16
-
-gdt_start:
-
-    dq 0
-
-
-gdt_code:
-
-    dw 0xFFFF
-    dw 0x0000
-    db 0x00
-    db 10011010b
-    db 11001111b
-    db 0x00
-
-
-gdt_data:
-
-    dw 0xFFFF
-    dw 0x0000
-    db 0x00
-    db 10010010b
-    db 11001111b
-    db 0x00
-
-
-gdt_end:
-
-
-gdt_descriptor:
-
-    dw gdt_end - gdt_start - 1
-    dd gdt_start
 
 
 ; ========================================
@@ -218,7 +152,7 @@ error_message:
 
 
 ; ========================================
-; Boot signature
+; Boot Signature
 ; ========================================
 
 times 510 - ($ - $$) db 0
