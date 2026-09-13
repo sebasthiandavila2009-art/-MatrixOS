@@ -1,6 +1,6 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 3.1 - Stable Protected Mode
+; Version 3.2 - Stable Kernel Boot
 ; ========================================
 
 BITS 16
@@ -21,7 +21,7 @@ start:
 
     mov [boot_drive], dl
 
-    ; A
+    ; A = bootloader started
     mov al, 'A'
     call print_char
 
@@ -31,18 +31,18 @@ start:
     int 0x13
     jc disk_error
 
-    ; B
+    ; B = disk reset worked
     mov al, 'B'
     call print_char
 
-    ; --------------------------------
-    ; Load kernel
-    ; --------------------------------
-
+    ; Load kernel at physical address 0x1000
     xor ax, ax
     mov es, ax
     mov bx, 0x1000
 
+    ; Kernel is 8004 bytes = 16 sectors
+    ; Sector 1 is the bootloader
+    ; Sectors 2-17 contain the kernel
     mov byte [sector], 2
     mov byte [sectors_left], 16
 
@@ -53,7 +53,6 @@ load_kernel:
 
     mov ch, 0
     mov cl, [sector]
-
     mov dh, 0
     mov dl, [boot_drive]
 
@@ -61,47 +60,30 @@ load_kernel:
     jc disk_error
 
     add bx, 512
-
     inc byte [sector]
 
     dec byte [sectors_left]
     jnz load_kernel
 
-    ; C
+    ; C = kernel loaded
     mov al, 'C'
     call print_char
 
-    ; --------------------------------
-    ; Load GDT
-    ; --------------------------------
-
+    ; Load GDT while still in real mode
+    cli
     lgdt [gdt_descriptor]
 
-    ; D
-    mov al, 'D'
-    call print_char
-
-    ; --------------------------------
     ; Enable protected mode
-    ; --------------------------------
-
     mov eax, cr0
     or eax, 1
     mov cr0, eax
 
-    ; --------------------------------
-    ; Switch to protected mode
-    ;
-    ; The destination is below 64K,
-    ; so a 16-bit offset is sufficient.
-    ; The code segment itself is 32-bit.
-    ; --------------------------------
-
+    ; Far jump reloads CS from the GDT
     jmp CODE_SELECTOR:protected_mode
 
 
 ; ========================================
-; BIOS output
+; BIOS text output
 ; ========================================
 
 print_char:
@@ -131,7 +113,6 @@ error_loop:
     call print_char
     jmp error_loop
 
-
 halt:
 
     cli
@@ -147,10 +128,8 @@ BITS 32
 
 protected_mode:
 
-    ; P = Protected Mode reached
-    mov word [0xB8000], 0x0F50
-
-    ; Data segment
+    ; IMPORTANT:
+    ; Load valid protected-mode data segments FIRST.
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -162,15 +141,15 @@ protected_mode:
     ; Protected-mode stack
     mov esp, 0x90000
 
+    ; P = protected mode reached
+    mov word [0xB8000], 0x0F50
+
     ; M = protected mode working
     mov word [0xB8002], 0x0F4D
 
-    cli
-
-protected_hang:
-
-    hlt
-    jmp protected_hang
+    ; Jump to the loaded MatrixOS kernel
+    mov eax, 0x1000
+    jmp eax
 
 
 ; ========================================
@@ -184,7 +163,7 @@ gdt_start:
     ; Null descriptor
     dq 0
 
-    ; Code descriptor
+    ; 32-bit flat code segment
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -192,7 +171,7 @@ gdt_start:
     db 11001111b
     db 0x00
 
-    ; Data descriptor
+    ; 32-bit flat data segment
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -201,7 +180,6 @@ gdt_start:
     db 0x00
 
 gdt_end:
-
 
 gdt_descriptor:
 
@@ -227,7 +205,7 @@ error_message:
 
 
 ; ========================================
-; Boot Signature
+; Boot signature
 ; ========================================
 
 times 510 - ($ - $$) db 0
