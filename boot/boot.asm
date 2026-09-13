@@ -1,10 +1,13 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 2.9 - Boot Diagnostic
+; Version 3.0 - Protected Mode Test
 ; ========================================
 
 BITS 16
 ORG 0x7C00
+
+CODE_SELECTOR equ 0x08
+DATA_SELECTOR equ 0x10
 
 start:
 
@@ -18,36 +21,23 @@ start:
 
     mov [boot_drive], dl
 
-    ; ----------------------------
-    ; A = bootloader started
-    ; ----------------------------
-
+    ; A
     mov al, 'A'
     call print_char
 
-    ; ----------------------------
     ; Reset disk
-    ; ----------------------------
-
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
     jc disk_error
 
-    ; ----------------------------
-    ; B = disk reset worked
-    ; ----------------------------
-
+    ; B
     mov al, 'B'
     call print_char
 
-    ; ----------------------------
     ; Load kernel
-    ; ----------------------------
-
     xor ax, ax
     mov es, ax
-
     mov bx, 0x1000
 
     mov byte [sector], 2
@@ -74,36 +64,41 @@ load_kernel:
     dec byte [sectors_left]
     jnz load_kernel
 
-    ; ----------------------------
-    ; C = kernel completely loaded
-    ; ----------------------------
-
+    ; C
     mov al, 'C'
     call print_char
 
-    ; ----------------------------
-    ; D = bootloader continues
-    ; ----------------------------
+    ; --------------------------------
+    ; Load GDT
+    ; --------------------------------
 
+    lgdt [gdt_descriptor]
+
+    ; D = GDT loaded
     mov al, 'D'
     call print_char
 
-    ; ----------------------------
-    ; E = bootloader finished
-    ; ----------------------------
+    ; --------------------------------
+    ; Enable protected mode
+    ; --------------------------------
 
-    mov al, 'E'
-    call print_char
+    mov eax, cr0
+    or eax, 1
+    mov cr0, eax
 
-halt:
+    ; E = CR0 enabled
+    ;
+    ; We cannot use BIOS anymore after
+    ; entering protected mode.
+    ;
+    ; The far jump below switches us
+    ; into the 32-bit code segment.
 
-    cli
-    hlt
-    jmp halt
+    jmp dword CODE_SELECTOR:protected_mode
 
 
 ; ========================================
-; BIOS Text Output
+; BIOS text output
 ; ========================================
 
 print_char:
@@ -116,7 +111,7 @@ print_char:
 
 
 ; ========================================
-; Disk Error
+; Disk error
 ; ========================================
 
 disk_error:
@@ -132,6 +127,88 @@ error_loop:
 
     call print_char
     jmp error_loop
+
+
+halt:
+
+    cli
+    hlt
+    jmp halt
+
+
+; ========================================
+; Protected Mode
+; ========================================
+
+BITS 32
+
+protected_mode:
+
+    ; Write P directly to VGA memory.
+    ; This proves the far jump worked.
+    mov word [0xB8000], 0x0F50
+
+    ; Set data segments
+    mov ax, DATA_SELECTOR
+
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    ; Protected-mode stack
+    mov esp, 0x90000
+
+    ; Write M
+    mov word [0xB8002], 0x0F4D
+
+    cli
+
+hang:
+
+    hlt
+    jmp hang
+
+
+; ========================================
+; Global Descriptor Table
+; ========================================
+
+BITS 16
+
+gdt_start:
+
+    ; Null descriptor
+    dq 0
+
+gdt_code:
+
+    ; 32-bit code segment
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10011010b
+    db 11001111b
+    db 0x00
+
+gdt_data:
+
+    ; 32-bit data segment
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10010010b
+    db 11001111b
+    db 0x00
+
+gdt_end:
+
+
+gdt_descriptor:
+
+    dw gdt_end - gdt_start - 1
+    dd gdt_start
 
 
 ; ========================================
