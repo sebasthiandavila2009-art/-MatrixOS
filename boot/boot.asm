@@ -1,6 +1,6 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 2.7 - Simple 18 Sector Boot
+; Version 2.8 - Simple CHS Boot
 ; ========================================
 
 BITS 16
@@ -21,7 +21,7 @@ start:
 
     mov [boot_drive], dl
 
-    ; A = bootloader started
+    ; Show A
     mov al, 'A'
     call print_char
 
@@ -31,43 +31,33 @@ start:
     int 0x13
     jc disk_error
 
-    ; B = disk reset works
+    ; Show B
     mov al, 'B'
     call print_char
 
-    ; Get disk geometry
-    mov ah, 0x08
-    mov dl, [boot_drive]
-    int 0x13
-    jc disk_error
+    ; Load kernel
+    ; Kernel size: 8004 bytes
+    ; 16 sectors are required.
+    ;
+    ; Sector 1 = bootloader
+    ; Sectors 2-17 = kernel
 
-    mov al, cl
-    and al, 0x3F
-    mov [sectors_per_track], al
-
-    mov [max_head], dh
-
-    ; Load kernel at physical address 0x1000
     xor ax, ax
     mov es, ax
     mov bx, 0x1000
 
-    ; Kernel is 8004 bytes = 16 sectors
-    ; Disk sector 1 is the bootloader
-    ; Therefore load sectors 2 through 17
-    mov byte [current_sector], 2
-    mov byte [current_head], 0
-    mov word [current_cylinder], 0
+    mov byte [sector], 2
     mov byte [sectors_left], 16
 
-load_sector:
+load_loop:
 
     mov ah, 0x02
     mov al, 1
 
-    mov ch, byte [current_cylinder]
-    mov cl, byte [current_sector]
-    mov dh, byte [current_head]
+    mov ch, 0
+    mov cl, [sector]
+
+    mov dh, 0
     mov dl, [boot_drive]
 
     int 0x13
@@ -75,51 +65,29 @@ load_sector:
 
     add bx, 512
 
+    inc byte [sector]
+
     dec byte [sectors_left]
-    jz kernel_loaded
+    jnz load_loop
 
-    inc byte [current_sector]
-
-    mov al, [sectors_per_track]
-
-    cmp byte [current_sector], al
-    jbe load_sector
-
-    mov byte [current_sector], 1
-
-    inc byte [current_head]
-
-    mov al, [max_head]
-
-    cmp byte [current_head], al
-    jbe load_sector
-
-    mov byte [current_head], 0
-
-    inc word [current_cylinder]
-
-    jmp load_sector
-
-
-kernel_loaded:
-
-    ; C = kernel loaded
+    ; Show C
     mov al, 'C'
     call print_char
 
-    ; Disable interrupts
+    ; ====================================
+    ; Protected mode
+    ; ====================================
+
     cli
 
-    ; Load GDT
     lgdt [gdt_descriptor]
 
-    ; Enable protected mode
     mov eax, cr0
     or eax, 1
     mov cr0, eax
 
-    ; 32-bit far jump
-    jmp dword CODE_SELECTOR:protected_mode
+    ; Far jump into 32-bit code
+    jmp CODE_SELECTOR:protected_mode
 
 
 ; ========================================
@@ -169,10 +137,10 @@ BITS 32
 
 protected_mode:
 
-    ; D = protected mode reached
+    ; Show D
     mov word [0xB8000], 0x0F44
 
-    ; Load data segment
+    ; Data segment
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -181,32 +149,30 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set protected-mode stack
+    ; Stack
     mov esp, 0x90000
 
-    ; E = ready to jump to kernel
+    ; Show E
     mov word [0xB8002], 0x0F45
 
-    ; Jump directly to loaded kernel
+    ; Jump to kernel
     mov eax, 0x1000
     jmp eax
 
 
 ; ========================================
-; Global Descriptor Table
+; GDT
 ; ========================================
 
 BITS 16
 
 gdt_start:
 
-    ; Null descriptor
     dq 0
 
 
 gdt_code:
 
-    ; 32-bit code segment
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -217,7 +183,6 @@ gdt_code:
 
 gdt_data:
 
-    ; 32-bit data segment
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -242,20 +207,8 @@ gdt_descriptor:
 boot_drive:
     db 0
 
-sectors_per_track:
-    db 18
-
-max_head:
-    db 1
-
-current_sector:
+sector:
     db 2
-
-current_head:
-    db 0
-
-current_cylinder:
-    dw 0
 
 sectors_left:
     db 16
