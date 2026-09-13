@@ -1,13 +1,14 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 3.2 - Stable Kernel Boot
+; Version 3.3 - Stable Protected Mode
 ; ========================================
 
 BITS 16
 ORG 0x7C00
 
-CODE_SELECTOR equ 0x08
-DATA_SELECTOR equ 0x10
+CODE16_SELECTOR equ 0x08
+CODE32_SELECTOR equ 0x10
+DATA_SELECTOR   equ 0x18
 
 start:
 
@@ -21,11 +22,17 @@ start:
 
     mov [boot_drive], dl
 
+    ; ====================================
     ; A = bootloader started
+    ; ====================================
+
     mov al, 'A'
     call print_char
 
+    ; ====================================
     ; Reset disk
+    ; ====================================
+
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
@@ -35,14 +42,20 @@ start:
     mov al, 'B'
     call print_char
 
-    ; Load kernel at physical address 0x1000
+    ; ====================================
+    ; Load kernel
+    ; ====================================
+
     xor ax, ax
     mov es, ax
     mov bx, 0x1000
 
-    ; Kernel is 8004 bytes = 16 sectors
-    ; Sector 1 is the bootloader
-    ; Sectors 2-17 contain the kernel
+    ; Kernel = 8004 bytes
+    ; 16 sectors
+    ;
+    ; Boot sector = sector 1
+    ; Kernel      = sectors 2-17
+
     mov byte [sector], 2
     mov byte [sectors_left], 16
 
@@ -53,6 +66,7 @@ load_kernel:
 
     mov ch, 0
     mov cl, [sector]
+
     mov dh, 0
     mov dl, [boot_drive]
 
@@ -60,26 +74,38 @@ load_kernel:
     jc disk_error
 
     add bx, 512
+
     inc byte [sector]
 
     dec byte [sectors_left]
     jnz load_kernel
 
-    ; C = kernel loaded
+    ; C = kernel successfully loaded
+
     mov al, 'C'
     call print_char
 
-    ; Load GDT while still in real mode
+    ; ====================================
+    ; Load GDT
+    ; ====================================
+
     cli
+
     lgdt [gdt_descriptor]
 
+    ; ====================================
     ; Enable protected mode
+    ; ====================================
+
     mov eax, cr0
     or eax, 1
     mov cr0, eax
 
-    ; Far jump reloads CS from the GDT
-    jmp CODE_SELECTOR:protected_mode
+    ; ====================================
+    ; Enter 16-bit protected mode first
+    ; ====================================
+
+    jmp CODE16_SELECTOR:protected_mode16
 
 
 ; ========================================
@@ -111,25 +137,30 @@ error_loop:
     jz halt
 
     call print_char
+
     jmp error_loop
+
 
 halt:
 
     cli
     hlt
+
     jmp halt
 
 
 ; ========================================
-; Protected Mode
+; 16-bit Protected Mode
 ; ========================================
 
-BITS 32
+BITS 16
 
-protected_mode:
+protected_mode16:
 
-    ; IMPORTANT:
-    ; Load valid protected-mode data segments FIRST.
+    ; ====================================
+    ; Load valid data segment
+    ; ====================================
+
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -139,15 +170,62 @@ protected_mode:
     mov ss, ax
 
     ; Protected-mode stack
-    mov esp, 0x90000
 
+    mov sp, 0x9000
+
+    ; ====================================
     ; P = protected mode reached
+    ; ====================================
+
     mov word [0xB8000], 0x0F50
 
-    ; M = protected mode working
+    ; ====================================
+    ; Switch to 32-bit protected mode
+    ; ====================================
+
+    jmp CODE32_SELECTOR:protected_mode32
+
+
+; ========================================
+; 32-bit Protected Mode
+; ========================================
+
+BITS 32
+
+protected_mode32:
+
+    ; ====================================
+    ; Load data segments again
+    ; ====================================
+
+    mov ax, DATA_SELECTOR
+
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    ; 32-bit stack
+
+    mov esp, 0x90000
+
+    ; ====================================
+    ; M = 32-bit protected mode working
+    ; ====================================
+
     mov word [0xB8002], 0x0F4D
 
-    ; Jump to the loaded MatrixOS kernel
+    ; ====================================
+    ; K = about to start kernel
+    ; ====================================
+
+    mov word [0xB8004], 0x0F4B
+
+    ; ====================================
+    ; Jump to MatrixOS kernel
+    ; ====================================
+
     mov eax, 0x1000
     jmp eax
 
@@ -160,10 +238,31 @@ BITS 16
 
 gdt_start:
 
+    ; ------------------------------------
     ; Null descriptor
+    ; ------------------------------------
+
     dq 0
 
-    ; 32-bit flat code segment
+
+    ; ------------------------------------
+    ; 16-bit code segment
+    ; Selector = 0x08
+    ; ------------------------------------
+
+    dw 0xFFFF
+    dw 0x0000
+    db 0x00
+    db 10011010b
+    db 00001111b
+    db 0x00
+
+
+    ; ------------------------------------
+    ; 32-bit code segment
+    ; Selector = 0x10
+    ; ------------------------------------
+
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -171,7 +270,12 @@ gdt_start:
     db 11001111b
     db 0x00
 
-    ; 32-bit flat data segment
+
+    ; ------------------------------------
+    ; 32-bit data segment
+    ; Selector = 0x18
+    ; ------------------------------------
+
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -179,7 +283,9 @@ gdt_start:
     db 11001111b
     db 0x00
 
+
 gdt_end:
+
 
 gdt_descriptor:
 
