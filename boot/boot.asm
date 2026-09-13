@@ -1,37 +1,29 @@
-; ========================================
 ; MatrixOS Bootloader
-; Version 3.6 - Stable PM Transition
-; ========================================
+; Version 3.7 - Clean 32-bit Protected Mode Transition
 
 BITS 16
 ORG 0x7C00
 
-CODE_SELECTOR equ 0x08
-DATA_SELECTOR equ 0x10
-
 start:
 
     cli
-    cld
 
-    ; ====================================
-    ; Real mode setup
-    ; ====================================
+    ; Save boot drive
+    mov [boot_drive], dl
 
+    ; Set up real-mode segments
     xor ax, ax
-
     mov ds, ax
     mov es, ax
     mov ss, ax
-
     mov sp, 0x7C00
 
-    mov [boot_drive], dl
+    ; ====================================
+    ; Diagnostic A - bootloader started
+    ; ====================================
 
-    ; A = bootloader started
-
-    mov al, 'A'
-    call print_char
+    mov si, msg_a
+    call print_string
 
     ; ====================================
     ; Reset disk
@@ -39,32 +31,26 @@ start:
 
     xor ah, ah
     mov dl, [boot_drive]
-
     int 0x13
 
     jc disk_error
 
-    ; B = disk reset successful
+    ; ====================================
+    ; Diagnostic B - disk reset worked
+    ; ====================================
 
-    mov al, 'B'
-    call print_char
+    mov si, msg_b
+    call print_string
 
     ; ====================================
     ; Load MatrixOS kernel
+    ;
+    ; Kernel begins at sector 2.
+    ; Load 16 sectors to physical 0x1000.
     ; ====================================
 
-    xor ax, ax
-    mov es, ax
-
     mov bx, 0x1000
-
-    ; Kernel = 8004 bytes
-    ; 16 sectors
-    ;
-    ; Sector 1 = bootloader
-    ; Sectors 2-17 = kernel
-
-    mov byte [sector], 2
+    mov byte [current_sector], 2
     mov byte [sectors_left], 16
 
 load_kernel:
@@ -73,27 +59,34 @@ load_kernel:
     mov al, 1
 
     mov ch, 0
-    mov cl, [sector]
+    mov cl, [current_sector]
 
     mov dh, 0
     mov dl, [boot_drive]
+
+    mov es, ax
+
+    ; ES must be zero.
+    xor ax, ax
+    mov es, ax
+
+    mov bx, 0x1000
 
     int 0x13
 
     jc disk_error
 
-    add bx, 512
-
-    inc byte [sector]
-
+    inc byte [current_sector]
     dec byte [sectors_left]
 
     jnz load_kernel
 
-    ; C = kernel loaded
+    ; ====================================
+    ; Diagnostic C - kernel loaded
+    ; ====================================
 
-    mov al, 'C'
-    call print_char
+    mov si, msg_c
+    call print_string
 
     ; ====================================
     ; Load GDT
@@ -108,25 +101,14 @@ load_kernel:
     ; ====================================
 
     mov eax, cr0
-
-    or eax, 1
-
+    or eax, 0x00000001
     mov cr0, eax
 
     ; ====================================
-    ; Enter protected mode
-    ;
-    ; The CPU is still using the old
-    ; real-mode CS cache here.
-    ;
-    ; RETF loads the new protected-mode
-    ; CS from the GDT and flushes the
-    ; instruction pipeline.
+    ; Far jump into 32-bit protected mode
     ; ====================================
 
-    push word CODE_SELECTOR
-    push word protected_mode
-    retf
+    jmp CODE_SELECTOR:protected_mode
 
 
 ; ========================================
@@ -137,8 +119,25 @@ print_char:
 
     mov ah, 0x0E
     mov bh, 0
-
     int 0x10
+
+    ret
+
+
+print_string:
+
+.next:
+
+    lodsb
+
+    test al, al
+    jz .done
+
+    call print_char
+
+    jmp .next
+
+.done:
 
     ret
 
@@ -149,28 +148,14 @@ print_char:
 
 disk_error:
 
-    mov si, error_message
+    mov si, msg_error
+    call print_string
 
-disk_error_loop:
-
-    lodsb
-
-    test al, al
-
-    jz disk_halt
-
-    call print_char
-
-    jmp disk_error_loop
-
-
-disk_halt:
+.hang:
 
     cli
-
     hlt
-
-    jmp disk_halt
+    jmp .hang
 
 
 ; ========================================
@@ -194,7 +179,7 @@ protected_mode:
     mov ss, ax
 
     ; ====================================
-    ; Set 32-bit stack
+    ; Set protected-mode stack
     ; ====================================
 
     mov esp, 0x90000
@@ -202,41 +187,34 @@ protected_mode:
     cld
 
     ; ====================================
-    ; PM = protected mode reached
+    ; Diagnostic D
     ; ====================================
 
-    mov word [0xB8000], 0x0F50
-    mov word [0xB8002], 0x0F4D
+    mov word [0xB8000], 0x0F44
+
+    ; ====================================
+    ; Diagnostic E
+    ; ====================================
+
+    mov word [0xB8002], 0x0F45
 
     ; ====================================
     ; Jump to MatrixOS kernel
     ; ====================================
 
-    mov eax, 0x1000
-
-    jmp eax
+    jmp 0x1000
 
 
 ; ========================================
 ; Global Descriptor Table
 ; ========================================
 
-BITS 16
-
 gdt_start:
 
-    ; ------------------------------------
     ; Null descriptor
-    ; ------------------------------------
+    dq 0x0000000000000000
 
-    dq 0
-
-
-    ; ------------------------------------
     ; 32-bit code segment
-    ; Selector = 0x08
-    ; ------------------------------------
-
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -244,19 +222,13 @@ gdt_start:
     db 11001111b
     db 0x00
 
-
-    ; ------------------------------------
     ; 32-bit data segment
-    ; Selector = 0x10
-    ; ------------------------------------
-
     dw 0xFFFF
     dw 0x0000
     db 0x00
     db 10010010b
     db 11001111b
     db 0x00
-
 
 gdt_end:
 
@@ -268,26 +240,48 @@ gdt_descriptor:
 
 
 ; ========================================
+; Constants
+; ========================================
+
+CODE_SELECTOR equ 0x08
+DATA_SELECTOR equ 0x10
+
+
+; ========================================
 ; Variables
 ; ========================================
 
 boot_drive:
     db 0
 
-sector:
+current_sector:
     db 2
 
 sectors_left:
     db 16
 
-error_message:
-    db "MatrixOS: Disk error", 0
+
+; ========================================
+; Diagnostic messages
+; ========================================
+
+msg_a:
+    db 'A', 0
+
+msg_b:
+    db 'B', 0
+
+msg_c:
+    db 'C', 0
+
+msg_error:
+    db 'X', 0
 
 
 ; ========================================
-; Boot signature
+; Boot sector padding/signature
 ; ========================================
 
-times 510 - ($ - $$) db 0
+times 510-($-$$) db 0
 
 dw 0xAA55
