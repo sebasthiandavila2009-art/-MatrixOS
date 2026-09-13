@@ -1,60 +1,61 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 3.3 - Stable Protected Mode
+; Version 3.4 - Protected Mode Fix
 ; ========================================
 
 BITS 16
 ORG 0x7C00
 
-CODE16_SELECTOR equ 0x08
-CODE32_SELECTOR equ 0x10
-DATA_SELECTOR   equ 0x18
+CODE_SELECTOR equ 0x08
+DATA_SELECTOR equ 0x10
 
 start:
 
     cli
 
+    ; ------------------------------------
+    ; Real mode setup
+    ; ------------------------------------
+
     xor ax, ax
+
     mov ds, ax
     mov es, ax
     mov ss, ax
+
     mov sp, 0x7C00
 
     mov [boot_drive], dl
 
-    ; ====================================
     ; A = bootloader started
-    ; ====================================
 
     mov al, 'A'
     call print_char
 
-    ; ====================================
+    ; ------------------------------------
     ; Reset disk
-    ; ====================================
+    ; ------------------------------------
 
     xor ah, ah
     mov dl, [boot_drive]
+
     int 0x13
+
     jc disk_error
 
-    ; B = disk reset worked
+    ; B = disk reset successful
+
     mov al, 'B'
     call print_char
 
-    ; ====================================
+    ; ------------------------------------
     ; Load kernel
-    ; ====================================
+    ; ------------------------------------
 
     xor ax, ax
     mov es, ax
-    mov bx, 0x1000
 
-    ; Kernel = 8004 bytes
-    ; 16 sectors
-    ;
-    ; Boot sector = sector 1
-    ; Kernel      = sectors 2-17
+    mov bx, 0x1000
 
     mov byte [sector], 2
     mov byte [sectors_left], 16
@@ -71,6 +72,7 @@ load_kernel:
     mov dl, [boot_drive]
 
     int 0x13
+
     jc disk_error
 
     add bx, 512
@@ -78,44 +80,46 @@ load_kernel:
     inc byte [sector]
 
     dec byte [sectors_left]
+
     jnz load_kernel
 
-    ; C = kernel successfully loaded
+    ; C = kernel loaded
 
     mov al, 'C'
     call print_char
 
-    ; ====================================
+    ; ------------------------------------
     ; Load GDT
-    ; ====================================
+    ; ------------------------------------
 
     cli
 
     lgdt [gdt_descriptor]
 
-    ; ====================================
-    ; Enable protected mode
-    ; ====================================
+    ; ------------------------------------
+    ; Enter protected mode
+    ; ------------------------------------
 
     mov eax, cr0
     or eax, 1
     mov cr0, eax
 
-    ; ====================================
-    ; Enter 16-bit protected mode first
-    ; ====================================
+    ; Mandatory far jump.
+    ; This reloads CS with the GDT code
+    ; descriptor.
 
-    jmp CODE16_SELECTOR:protected_mode16
+    jmp CODE_SELECTOR:protected_mode
 
 
 ; ========================================
-; BIOS text output
+; BIOS output
 ; ========================================
 
 print_char:
 
     mov ah, 0x0E
     mov bh, 0
+
     int 0x10
 
     ret
@@ -129,74 +133,39 @@ disk_error:
 
     mov si, error_message
 
-error_loop:
+disk_error_loop:
 
     lodsb
 
     test al, al
-    jz halt
+
+    jz disk_halt
 
     call print_char
 
-    jmp error_loop
+    jmp disk_error_loop
 
 
-halt:
+disk_halt:
 
     cli
+
     hlt
 
-    jmp halt
+    jmp disk_halt
 
 
 ; ========================================
-; 16-bit Protected Mode
-; ========================================
-
-BITS 16
-
-protected_mode16:
-
-    ; ====================================
-    ; Load valid data segment
-    ; ====================================
-
-    mov ax, DATA_SELECTOR
-
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-
-    ; Protected-mode stack
-
-    mov sp, 0x9000
-
-    ; ====================================
-    ; P = protected mode reached
-    ; ====================================
-
-    mov word [0xB8000], 0x0F50
-
-    ; ====================================
-    ; Switch to 32-bit protected mode
-    ; ====================================
-
-    jmp CODE32_SELECTOR:protected_mode32
-
-
-; ========================================
-; 32-bit Protected Mode
+; Protected Mode
 ; ========================================
 
 BITS 32
 
-protected_mode32:
+protected_mode:
 
-    ; ====================================
-    ; Load data segments again
-    ; ====================================
+    ; ------------------------------------
+    ; Set protected-mode data segments
+    ; ------------------------------------
 
     mov ax, DATA_SELECTOR
 
@@ -206,27 +175,25 @@ protected_mode32:
     mov gs, ax
     mov ss, ax
 
-    ; 32-bit stack
+    ; ------------------------------------
+    ; Protected-mode stack
+    ; ------------------------------------
 
     mov esp, 0x90000
 
-    ; ====================================
-    ; M = 32-bit protected mode working
-    ; ====================================
+    ; ------------------------------------
+    ; Write PM directly to VGA
+    ; ------------------------------------
 
+    mov word [0xB8000], 0x0F50
     mov word [0xB8002], 0x0F4D
 
-    ; ====================================
-    ; K = about to start kernel
-    ; ====================================
-
-    mov word [0xB8004], 0x0F4B
-
-    ; ====================================
+    ; ------------------------------------
     ; Jump to MatrixOS kernel
-    ; ====================================
+    ; ------------------------------------
 
     mov eax, 0x1000
+
     jmp eax
 
 
@@ -246,41 +213,34 @@ gdt_start:
 
 
     ; ------------------------------------
-    ; 16-bit code segment
+    ; 32-bit code segment
     ; Selector = 0x08
     ; ------------------------------------
 
     dw 0xFFFF
     dw 0x0000
     db 0x00
+
     db 10011010b
-    db 00001111b
+
+    db 11001111b
+
     db 0x00
 
 
     ; ------------------------------------
-    ; 32-bit code segment
+    ; 32-bit data segment
     ; Selector = 0x10
     ; ------------------------------------
 
     dw 0xFFFF
     dw 0x0000
     db 0x00
-    db 10011010b
-    db 11001111b
-    db 0x00
 
-
-    ; ------------------------------------
-    ; 32-bit data segment
-    ; Selector = 0x18
-    ; ------------------------------------
-
-    dw 0xFFFF
-    dw 0x0000
-    db 0x00
     db 10010010b
+
     db 11001111b
+
     db 0x00
 
 
@@ -290,6 +250,7 @@ gdt_end:
 gdt_descriptor:
 
     dw gdt_end - gdt_start - 1
+
     dd gdt_start
 
 
