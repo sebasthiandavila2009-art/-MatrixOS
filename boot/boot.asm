@@ -1,6 +1,6 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 3.0 - Protected Mode Test
+; Version 3.1 - Stable Protected Mode
 ; ========================================
 
 BITS 16
@@ -35,7 +35,10 @@ start:
     mov al, 'B'
     call print_char
 
+    ; --------------------------------
     ; Load kernel
+    ; --------------------------------
+
     xor ax, ax
     mov es, ax
     mov bx, 0x1000
@@ -74,7 +77,7 @@ load_kernel:
 
     lgdt [gdt_descriptor]
 
-    ; D = GDT loaded
+    ; D
     mov al, 'D'
     call print_char
 
@@ -86,19 +89,19 @@ load_kernel:
     or eax, 1
     mov cr0, eax
 
-    ; E = CR0 enabled
+    ; --------------------------------
+    ; Switch to protected mode
     ;
-    ; We cannot use BIOS anymore after
-    ; entering protected mode.
-    ;
-    ; The far jump below switches us
-    ; into the 32-bit code segment.
+    ; The destination is below 64K,
+    ; so a 16-bit offset is sufficient.
+    ; The code segment itself is 32-bit.
+    ; --------------------------------
 
-    jmp dword CODE_SELECTOR:protected_mode
+    jmp CODE_SELECTOR:protected_mode
 
 
 ; ========================================
-; BIOS text output
+; BIOS output
 ; ========================================
 
 print_char:
@@ -144,11 +147,10 @@ BITS 32
 
 protected_mode:
 
-    ; Write P directly to VGA memory.
-    ; This proves the far jump worked.
+    ; P = Protected Mode reached
     mov word [0xB8000], 0x0F50
 
-    ; Set data segments
+    ; Data segment
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -160,15 +162,15 @@ protected_mode:
     ; Protected-mode stack
     mov esp, 0x90000
 
-    ; Write M
+    ; M = protected mode working
     mov word [0xB8002], 0x0F4D
 
     cli
 
-hang:
+protected_hang:
 
     hlt
-    jmp hang
+    jmp protected_hang
 
 
 ; ========================================
@@ -182,9 +184,7 @@ gdt_start:
     ; Null descriptor
     dq 0
 
-gdt_code:
-
-    ; 32-bit code segment
+    ; Code descriptor
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -192,9 +192,7 @@ gdt_code:
     db 11001111b
     db 0x00
 
-gdt_data:
-
-    ; 32-bit data segment
+    ; Data descriptor
     dw 0xFFFF
     dw 0x0000
     db 0x00
