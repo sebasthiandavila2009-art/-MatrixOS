@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 3.9 - Fixed Protected Mode Address
+; Version 4.0 - Clean Protected Mode Transition
 
 BITS 16
 ORG 0x7C00
@@ -11,41 +11,30 @@ start:
     ; Save BIOS boot drive
     mov [boot_drive], dl
 
-    ; Real-mode segments
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
 
-    ; ------------------------------------
-    ; A - bootloader started
-    ; ------------------------------------
-
+    ; A
     mov si, msg_a
     call print_string
 
-    ; ------------------------------------
     ; Reset disk
-    ; ------------------------------------
-
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
-
     jc disk_error
 
-    ; ------------------------------------
-    ; B - disk reset worked
-    ; ------------------------------------
-
+    ; B
     mov si, msg_b
     call print_string
 
     ; ------------------------------------
     ; Load kernel
-    ; Sector 2 through sector 17
-    ; Physical address 0x1000
+    ; Sectors 2-17
+    ; Address 0x1000
     ; ------------------------------------
 
     xor ax, ax
@@ -59,18 +48,14 @@ load_kernel:
 
     mov ah, 0x02
     mov al, 1
-
     mov ch, 0
     mov cl, [current_sector]
-
     mov dh, 0
     mov dl, [boot_drive]
 
     int 0x13
-
     jc disk_error
 
-    ; Move destination forward by one sector
     add bx, 512
 
     inc byte [current_sector]
@@ -78,10 +63,7 @@ load_kernel:
 
     jnz load_kernel
 
-    ; ------------------------------------
-    ; C - kernel loaded
-    ; ------------------------------------
-
+    ; C
     mov si, msg_c
     call print_string
 
@@ -90,7 +72,6 @@ load_kernel:
     ; ------------------------------------
 
     cli
-
     lgdt [gdt_descriptor]
 
     ; ------------------------------------
@@ -102,20 +83,16 @@ load_kernel:
     mov cr0, eax
 
     ; ------------------------------------
-    ; Explicit 32-bit far jump
+    ; 32-bit far jump
     ;
-    ; IMPORTANT:
-    ; protected_mode is inside the boot
-    ; sector, which is loaded at 0x7C00.
-    ;
-    ; Therefore the physical address is:
-    ;
-    ; 0x7C00 + protected_mode
+    ; protected_mode already contains
+    ; the ORG-adjusted address 0x7Cxx.
+    ; DO NOT add 0x7C00 again.
     ; ------------------------------------
 
     db 0x66
     db 0xEA
-    dd 0x7C00 + protected_mode
+    dd protected_mode
     dw CODE_SELECTOR
 
 
@@ -127,27 +104,21 @@ print_char:
 
     mov ah, 0x0E
     mov bh, 0
-
     int 0x10
-
     ret
 
 
 print_string:
 
 .next:
-
     lodsb
-
     test al, al
     jz .done
 
     call print_char
-
     jmp .next
 
 .done:
-
     ret
 
 
@@ -161,25 +132,20 @@ disk_error:
     call print_string
 
 .hang:
-
     cli
     hlt
-
     jmp .hang
 
 
 ; ========================================
-; 32-bit protected mode
+; Protected Mode
 ; ========================================
 
 BITS 32
 
 protected_mode:
 
-    ; ------------------------------------
-    ; Load data segment
-    ; ------------------------------------
-
+    ; Set data segments FIRST
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -188,30 +154,18 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; ------------------------------------
     ; Protected-mode stack
-    ; ------------------------------------
-
     mov esp, 0x90000
 
     cld
 
-    ; ------------------------------------
-    ; D - protected mode reached
-    ; ------------------------------------
-
+    ; D
     mov word [0xB8000], 0x0F44
 
-    ; ------------------------------------
-    ; E - protected mode is stable
-    ; ------------------------------------
-
+    ; E
     mov word [0xB8002], 0x0F45
 
-    ; ------------------------------------
     ; Jump to kernel
-    ; ------------------------------------
-
     mov eax, 0x1000
     jmp eax
 
@@ -224,10 +178,10 @@ BITS 16
 
 gdt_start:
 
-    ; Null descriptor
-    dq 0x0000000000000000
+    ; Null
+    dq 0
 
-    ; Code descriptor
+    ; Code
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -235,7 +189,7 @@ gdt_start:
     db 11001111b
     db 0x00
 
-    ; Data descriptor
+    ; Data
     dw 0xFFFF
     dw 0x0000
     db 0x00
