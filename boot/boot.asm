@@ -1,6 +1,6 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 3.5 - Explicit Protected Mode
+; Version 3.6 - Stable PM Transition
 ; ========================================
 
 BITS 16
@@ -114,18 +114,19 @@ load_kernel:
     mov cr0, eax
 
     ; ====================================
-    ; Explicit 32-bit far jump
+    ; Enter protected mode
     ;
-    ; 66 = operand-size override
-    ; EA = far jump
-    ; DD = 32-bit offset
-    ; DW = code selector
+    ; The CPU is still using the old
+    ; real-mode CS cache here.
+    ;
+    ; RETF loads the new protected-mode
+    ; CS from the GDT and flushes the
+    ; instruction pipeline.
     ; ====================================
 
-    db 0x66
-    db 0xEA
-    dd protected_mode
-    dw CODE_SELECTOR
+    push word CODE_SELECTOR
+    push word protected_mode
+    retf
 
 
 ; ========================================
@@ -198,22 +199,13 @@ protected_mode:
 
     mov esp, 0x90000
 
-    ; ====================================
-    ; Clear direction flag
-    ; ====================================
-
     cld
 
     ; ====================================
-    ; P = Protected Mode
+    ; PM = protected mode reached
     ; ====================================
 
     mov word [0xB8000], 0x0F50
-
-    ; ====================================
-    ; M = Protected Mode working
-    ; ====================================
-
     mov word [0xB8002], 0x0F4D
 
     ; ====================================
@@ -242,7 +234,7 @@ gdt_start:
 
     ; ------------------------------------
     ; 32-bit code segment
-    ; Selector 0x08
+    ; Selector = 0x08
     ; ------------------------------------
 
     dw 0xFFFF
@@ -255,7 +247,7 @@ gdt_start:
 
     ; ------------------------------------
     ; 32-bit data segment
-    ; Selector 0x10
+    ; Selector = 0x10
     ; ------------------------------------
 
     dw 0xFFFF
@@ -272,7 +264,6 @@ gdt_end:
 gdt_descriptor:
 
     dw gdt_end - gdt_start - 1
-
     dd gdt_start
 
 
