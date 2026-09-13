@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 3.8 - Explicit Protected Mode Entry
+; Version 3.9 - Fixed Protected Mode Address
 
 BITS 16
 ORG 0x7C00
@@ -98,22 +98,24 @@ load_kernel:
     ; ------------------------------------
 
     mov eax, cr0
-
     or eax, 1
-
     mov cr0, eax
 
     ; ------------------------------------
     ; Explicit 32-bit far jump
     ;
-    ; EA = far jump
-    ; 32-bit offset
-    ; 16-bit selector
+    ; IMPORTANT:
+    ; protected_mode is inside the boot
+    ; sector, which is loaded at 0x7C00.
+    ;
+    ; Therefore the physical address is:
+    ;
+    ; 0x7C00 + protected_mode
     ; ------------------------------------
 
     db 0x66
     db 0xEA
-    dd protected_mode
+    dd 0x7C00 + protected_mode
     dw CODE_SELECTOR
 
 
@@ -211,7 +213,6 @@ protected_mode:
     ; ------------------------------------
 
     mov eax, 0x1000
-
     jmp eax
 
 
