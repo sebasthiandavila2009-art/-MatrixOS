@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 2.3 - Terminal Window Manager
+// Version 2.4 - Stable Desktop Boot / Mouse Disabled
 
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
@@ -401,7 +401,6 @@ void terminal_draw(void)
     int width = terminal_width;
     int height = terminal_height;
 
-    /* Window shadow */
     graphics_rectangle(
         x + 3,
         y + 3,
@@ -410,7 +409,6 @@ void terminal_draw(void)
         BLACK
     );
 
-    /* Window */
     graphics_rectangle(
         x,
         y,
@@ -419,7 +417,6 @@ void terminal_draw(void)
         WHITE
     );
 
-    /* Title bar */
     graphics_rectangle(
         x,
         y,
@@ -435,7 +432,6 @@ void terminal_draw(void)
         WHITE
     );
 
-    /* Minimize button */
     graphics_rectangle(
         x + width - 42,
         y + 4,
@@ -444,7 +440,6 @@ void terminal_draw(void)
         GRAY
     );
 
-    /* Maximize button */
     graphics_rectangle(
         x + width - 27,
         y + 4,
@@ -453,7 +448,6 @@ void terminal_draw(void)
         GRAY
     );
 
-    /* Close button */
     graphics_rectangle(
         x + width - 12,
         y + 4,
@@ -462,7 +456,6 @@ void terminal_draw(void)
         GRAY
     );
 
-    /* Terminal background */
     graphics_rectangle(
         x + 5,
         y + 20,
@@ -499,7 +492,6 @@ void terminal_draw(void)
         WHITE
     );
 
-    /* Cursor */
     graphics_rectangle(
         x + 12 + (20 * 6) +
         (terminal_length * 6),
@@ -602,7 +594,7 @@ void terminal_print_command(
         draw_text(
             terminal_x + 12,
             terminal_y + 99,
-            "Version 2.3",
+            "Version 2.4",
             WHITE
         );
 
@@ -681,27 +673,11 @@ extern char keyboard_get_char(void);
 
 
 /* =========================================================
-   Mouse
+   Cursor
    ========================================================= */
-
-extern void mouse_init(void);
-
-extern int mouse_get_packet(
-    int *dx,
-    int *dy,
-    unsigned char *buttons
-);
 
 static int mouse_x = 160;
 static int mouse_y = 100;
-
-static unsigned char mouse_buttons = 0;
-static unsigned char previous_buttons = 0;
-
-
-/* =========================================================
-   Cursor
-   ========================================================= */
 
 void draw_cursor(void)
 {
@@ -752,7 +728,16 @@ int point_inside(
 
 void kernel_main(void)
 {
-    mouse_init();
+    /*
+       Mouse initialization is intentionally disabled.
+
+       The previous version called mouse_init() before
+       drawing the desktop, and QEMU showed that execution
+       stopped inside mouse_init().
+
+       We are keeping the mouse code out of the startup
+       path until the desktop is confirmed working.
+    */
 
     draw_desktop();
 
@@ -760,251 +745,10 @@ void kernel_main(void)
 
     while (1)
     {
-        int dx;
-        int dy;
-        unsigned char buttons;
-
-        if (mouse_get_packet(
-                &dx,
-                &dy,
-                &buttons))
-        {
-            mouse_x += dx;
-            mouse_y -= dy;
-
-            if (mouse_x < 0)
-                mouse_x = 0;
-
-            if (mouse_x >= SCREEN_WIDTH)
-                mouse_x = SCREEN_WIDTH - 1;
-
-            if (mouse_y < 18)
-                mouse_y = 18;
-
-            if (mouse_y >= SCREEN_HEIGHT)
-                mouse_y = SCREEN_HEIGHT - 1;
-
-            mouse_buttons = buttons;
-
-            /* =================================================
-               Left Mouse Button
-               ================================================= */
-
-            if ((mouse_buttons & 1) &&
-                !(previous_buttons & 1))
-            {
-                /* -----------------------------------------
-                   Open Terminal
-                   ----------------------------------------- */
-
-                if (!terminal_open &&
-                    point_inside(
-                        mouse_x,
-                        mouse_y,
-                        15,
-                        30,
-                        55,
-                        45))
-                {
-                    terminal_open = 1;
-                    terminal_minimized = 0;
-                    terminal_maximized = 0;
-
-                    terminal_x = 25;
-                    terminal_y = 25;
-                    terminal_width = 270;
-                    terminal_height = 140;
-
-                    terminal_length = 0;
-                    terminal_input[0] = 0;
-
-                    terminal_draw();
-                }
-
-                /* -----------------------------------------
-                   Terminal controls
-                   ----------------------------------------- */
-
-                else if (terminal_open &&
-                         !terminal_minimized)
-                {
-                    int x = terminal_x;
-                    int y = terminal_y;
-                    int width = terminal_width;
-
-                    /* Close */
-                    if (point_inside(
-                            mouse_x,
-                            mouse_y,
-                            x + width - 16,
-                            y,
-                            16,
-                            16))
-                    {
-                        terminal_open = 0;
-                        terminal_minimized = 0;
-                        terminal_maximized = 0;
-
-                        draw_desktop();
-                    }
-
-                    /* Maximize / restore */
-                    else if (point_inside(
-                                mouse_x,
-                                mouse_y,
-                                x + width - 31,
-                                y,
-                                14,
-                                16))
-                    {
-                        if (!terminal_maximized)
-                        {
-                            terminal_maximized = 1;
-
-                            terminal_x = 5;
-                            terminal_y = 20;
-                            terminal_width = 310;
-                            terminal_height = 145;
-                        }
-                        else
-                        {
-                            terminal_maximized = 0;
-
-                            terminal_x = 25;
-                            terminal_y = 25;
-                            terminal_width = 270;
-                            terminal_height = 140;
-                        }
-
-                        terminal_draw();
-                    }
-
-                    /* Minimize */
-                    else if (point_inside(
-                                mouse_x,
-                                mouse_y,
-                                x + width - 46,
-                                y,
-                                14,
-                                16))
-                    {
-                        terminal_minimized = 1;
-
-                        draw_desktop();
-
-                        draw_text(
-                            58,
-                            179,
-                            "TERMINAL",
-                            WHITE
-                        );
-                    }
-
-                    /* Title bar drag */
-                    else if (!terminal_maximized &&
-                             point_inside(
-                                 mouse_x,
-                                 mouse_y,
-                                 x,
-                                 y,
-                                 width - 50,
-                                 16))
-                    {
-                        dragging_terminal = 1;
-
-                        drag_offset_x =
-                            mouse_x - terminal_x;
-
-                        drag_offset_y =
-                            mouse_y - terminal_y;
-                    }
-                }
-
-                /* -----------------------------------------
-                   Restore minimized Terminal
-                   ----------------------------------------- */
-
-                else if (terminal_open &&
-                         terminal_minimized &&
-                         point_inside(
-                             mouse_x,
-                             mouse_y,
-                             45,
-                             170,
-                             230,
-                             25))
-                {
-                    terminal_minimized = 0;
-
-                    terminal_draw();
-                }
-            }
-
-            /* =================================================
-               Dragging
-               ================================================= */
-
-            if (dragging_terminal &&
-                (mouse_buttons & 1))
-            {
-                terminal_x =
-                    mouse_x - drag_offset_x;
-
-                terminal_y =
-                    mouse_y - drag_offset_y;
-
-                if (terminal_x < 0)
-                    terminal_x = 0;
-
-                if (terminal_y < 18)
-                    terminal_y = 18;
-
-                if (terminal_x +
-                    terminal_width >
-                    SCREEN_WIDTH)
-                {
-                    terminal_x =
-                        SCREEN_WIDTH -
-                        terminal_width;
-                }
-
-                if (terminal_y +
-                    terminal_height >
-                    SCREEN_HEIGHT)
-                {
-                    terminal_y =
-                        SCREEN_HEIGHT -
-                        terminal_height;
-                }
-
-                draw_desktop();
-
-                terminal_draw();
-            }
-
-            /* Stop dragging */
-            if (!(mouse_buttons & 1))
-            {
-                dragging_terminal = 0;
-            }
-
-            previous_buttons = mouse_buttons;
-
-            draw_desktop();
-
-            if (terminal_open &&
-                !terminal_minimized)
-            {
-                terminal_draw();
-            }
-
-            draw_cursor();
-        }
-
-
-        /* =================================================
-           Terminal Keyboard
-           ================================================= */
+        /*
+           Keyboard remains active for the Terminal.
+           Mouse input is temporarily disabled.
+        */
 
         if (terminal_open &&
             !terminal_minimized)
