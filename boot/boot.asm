@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 3.7 - Clean 32-bit Protected Mode Transition
+; Version 3.8 - Explicit Protected Mode Entry
 
 BITS 16
 ORG 0x7C00
@@ -8,26 +8,26 @@ start:
 
     cli
 
-    ; Save boot drive
+    ; Save BIOS boot drive
     mov [boot_drive], dl
 
-    ; Set up real-mode segments
+    ; Real-mode segments
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7C00
 
-    ; ====================================
-    ; Diagnostic A - bootloader started
-    ; ====================================
+    ; ------------------------------------
+    ; A - bootloader started
+    ; ------------------------------------
 
     mov si, msg_a
     call print_string
 
-    ; ====================================
+    ; ------------------------------------
     ; Reset disk
-    ; ====================================
+    ; ------------------------------------
 
     xor ah, ah
     mov dl, [boot_drive]
@@ -35,19 +35,21 @@ start:
 
     jc disk_error
 
-    ; ====================================
-    ; Diagnostic B - disk reset worked
-    ; ====================================
+    ; ------------------------------------
+    ; B - disk reset worked
+    ; ------------------------------------
 
     mov si, msg_b
     call print_string
 
-    ; ====================================
-    ; Load MatrixOS kernel
-    ;
-    ; Kernel begins at sector 2.
-    ; Load 16 sectors to physical 0x1000.
-    ; ====================================
+    ; ------------------------------------
+    ; Load kernel
+    ; Sector 2 through sector 17
+    ; Physical address 0x1000
+    ; ------------------------------------
+
+    xor ax, ax
+    mov es, ax
 
     mov bx, 0x1000
     mov byte [current_sector], 2
@@ -64,51 +66,55 @@ load_kernel:
     mov dh, 0
     mov dl, [boot_drive]
 
-    mov es, ax
-
-    ; ES must be zero.
-    xor ax, ax
-    mov es, ax
-
-    mov bx, 0x1000
-
     int 0x13
 
     jc disk_error
+
+    ; Move destination forward by one sector
+    add bx, 512
 
     inc byte [current_sector]
     dec byte [sectors_left]
 
     jnz load_kernel
 
-    ; ====================================
-    ; Diagnostic C - kernel loaded
-    ; ====================================
+    ; ------------------------------------
+    ; C - kernel loaded
+    ; ------------------------------------
 
     mov si, msg_c
     call print_string
 
-    ; ====================================
+    ; ------------------------------------
     ; Load GDT
-    ; ====================================
+    ; ------------------------------------
 
     cli
 
     lgdt [gdt_descriptor]
 
-    ; ====================================
+    ; ------------------------------------
     ; Enable protected mode
-    ; ====================================
+    ; ------------------------------------
 
     mov eax, cr0
-    or eax, 0x00000001
+
+    or eax, 1
+
     mov cr0, eax
 
-    ; ====================================
-    ; Far jump into 32-bit protected mode
-    ; ====================================
+    ; ------------------------------------
+    ; Explicit 32-bit far jump
+    ;
+    ; EA = far jump
+    ; 32-bit offset
+    ; 16-bit selector
+    ; ------------------------------------
 
-    jmp CODE_SELECTOR:protected_mode
+    db 0x66
+    db 0xEA
+    dd protected_mode
+    dw CODE_SELECTOR
 
 
 ; ========================================
@@ -119,6 +125,7 @@ print_char:
 
     mov ah, 0x0E
     mov bh, 0
+
     int 0x10
 
     ret
@@ -155,20 +162,21 @@ disk_error:
 
     cli
     hlt
+
     jmp .hang
 
 
 ; ========================================
-; 32-bit Protected Mode
+; 32-bit protected mode
 ; ========================================
 
 BITS 32
 
 protected_mode:
 
-    ; ====================================
-    ; Load protected-mode data segments
-    ; ====================================
+    ; ------------------------------------
+    ; Load data segment
+    ; ------------------------------------
 
     mov ax, DATA_SELECTOR
 
@@ -178,43 +186,47 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; ====================================
-    ; Set protected-mode stack
-    ; ====================================
+    ; ------------------------------------
+    ; Protected-mode stack
+    ; ------------------------------------
 
     mov esp, 0x90000
 
     cld
 
-    ; ====================================
-    ; Diagnostic D
-    ; ====================================
+    ; ------------------------------------
+    ; D - protected mode reached
+    ; ------------------------------------
 
     mov word [0xB8000], 0x0F44
 
-    ; ====================================
-    ; Diagnostic E
-    ; ====================================
+    ; ------------------------------------
+    ; E - protected mode is stable
+    ; ------------------------------------
 
     mov word [0xB8002], 0x0F45
 
-    ; ====================================
-    ; Jump to MatrixOS kernel
-    ; ====================================
+    ; ------------------------------------
+    ; Jump to kernel
+    ; ------------------------------------
 
-    jmp 0x1000
+    mov eax, 0x1000
+
+    jmp eax
 
 
 ; ========================================
-; Global Descriptor Table
+; GDT
 ; ========================================
+
+BITS 16
 
 gdt_start:
 
     ; Null descriptor
     dq 0x0000000000000000
 
-    ; 32-bit code segment
+    ; Code descriptor
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -222,7 +234,7 @@ gdt_start:
     db 11001111b
     db 0x00
 
-    ; 32-bit data segment
+    ; Data descriptor
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -262,7 +274,7 @@ sectors_left:
 
 
 ; ========================================
-; Diagnostic messages
+; Messages
 ; ========================================
 
 msg_a:
@@ -279,7 +291,7 @@ msg_error:
 
 
 ; ========================================
-; Boot sector padding/signature
+; Boot signature
 ; ========================================
 
 times 510-($-$$) db 0
