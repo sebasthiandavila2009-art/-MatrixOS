@@ -1,10 +1,13 @@
 ; ========================================
 ; MatrixOS Bootloader
-; Version 2.5 - Protected Mode Fix
+; Version 2.6 - Clean Protected Mode
 ; ========================================
 
 BITS 16
 ORG 0x7C00
+
+CODE_SELECTOR equ 0x08
+DATA_SELECTOR equ 0x10
 
 start:
 
@@ -22,11 +25,7 @@ start:
     mov al, 'A'
     call print_char
 
-
-; ========================================
-; Reset disk
-; ========================================
-
+    ; Reset disk
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
@@ -36,11 +35,7 @@ start:
     mov al, 'B'
     call print_char
 
-
-; ========================================
-; Get BIOS disk geometry
-; ========================================
-
+    ; Get disk geometry
     mov ah, 0x08
     mov dl, [boot_drive]
     int 0x13
@@ -52,14 +47,7 @@ start:
 
     mov [max_head], dh
 
-
-; ========================================
-; Prepare kernel destination
-;
-; Physical address:
-; ES:BX = 0000:1000
-; ========================================
-
+    ; Load kernel at physical address 0x1000
     xor ax, ax
     mov es, ax
     mov bx, 0x1000
@@ -68,13 +56,9 @@ start:
     mov byte [current_head], 0
     mov word [current_cylinder], 0
 
+    ; Load 30 sectors
     mov byte [sectors_left], 30
 
-
-; ========================================
-; Load kernel
-; One sector at a time
-; ========================================
 
 load_sector:
 
@@ -116,10 +100,6 @@ load_sector:
 
     jmp load_sector
 
-
-; ========================================
-; Retry failed sector
-; ========================================
 
 retry_read:
 
@@ -166,17 +146,12 @@ retry_read:
     jmp load_sector
 
 
-; ========================================
-; Kernel successfully loaded
-; ========================================
-
 kernel_loaded:
 
-    ; C = all 30 sectors loaded
+    ; C = kernel loaded
     mov al, 'C'
     call print_char
 
-    ; Disable interrupts before switching modes
     cli
 
     ; Load GDT
@@ -184,10 +159,10 @@ kernel_loaded:
 
     ; Enable protected mode
     mov eax, cr0
-    or eax, 0x00000001
+    or eax, 1
     mov cr0, eax
 
-    ; Far jump flushes CPU pipeline
+    ; Far jump into protected mode
     jmp CODE_SELECTOR:protected_mode
 
 
@@ -207,19 +182,24 @@ error_loop:
     jz halt
 
     call print_char
-
     jmp error_loop
 
 
+halt:
+
+    cli
+    hlt
+    jmp halt
+
+
 ; ========================================
-; 16-bit BIOS text output
+; BIOS text output
 ; ========================================
 
 print_char:
 
     mov ah, 0x0E
     mov bh, 0
-    mov bl, 0x07
     int 0x10
 
     ret
@@ -233,7 +213,10 @@ BITS 32
 
 protected_mode:
 
-    ; Load 32-bit data segment selector
+    ; D = protected mode reached
+    mov word [0xB8000], 0x0F44
+
+    ; Load data selector
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -242,21 +225,18 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Set protected-mode stack
+    ; Protected-mode stack
     mov esp, 0x90000
 
-    ; D = protected mode reached
-    mov word [0xB8000], 0x0F44
-
-    ; E = kernel jump about to happen
+    ; E = kernel jump
     mov word [0xB8002], 0x0F45
 
-    ; Jump to kernel loaded at physical 0x1000
+    ; Jump to kernel
     jmp 0x1000
 
 
 ; ========================================
-; GDT
+; Global Descriptor Table
 ; ========================================
 
 BITS 16
@@ -264,11 +244,12 @@ BITS 16
 gdt_start:
 
     ; Null descriptor
-    dq 0x0000000000000000
+    dq 0
+
 
 gdt_code:
 
-    ; Code segment
+    ; 32-bit code segment
     dw 0xFFFF
     dw 0x0000
     db 0x00
@@ -276,15 +257,17 @@ gdt_code:
     db 11001111b
     db 0x00
 
+
 gdt_data:
 
-    ; Data segment
+    ; 32-bit data segment
     dw 0xFFFF
     dw 0x0000
     db 0x00
     db 10010010b
     db 11001111b
     db 0x00
+
 
 gdt_end:
 
@@ -296,47 +279,31 @@ gdt_descriptor:
 
 
 ; ========================================
-; Selectors
-; ========================================
-
-CODE_SELECTOR equ 0x08
-DATA_SELECTOR equ 0x10
-
-
-; ========================================
 ; Variables
 ; ========================================
 
 boot_drive:
-
     db 0
 
 sectors_per_track:
-
     db 18
 
 max_head:
-
     db 1
 
 current_sector:
-
     db 2
 
 current_head:
-
     db 0
 
 current_cylinder:
-
     dw 0
 
 sectors_left:
-
     db 30
 
 error_message:
-
     db "MatrixOS: Disk error", 0
 
 
