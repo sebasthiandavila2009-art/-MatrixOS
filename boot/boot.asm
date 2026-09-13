@@ -1,5 +1,5 @@
 ; MatrixOS Bootloader
-; Version 4.0 - Clean Protected Mode Transition
+; Version 4.1 - VGA Mode 13h
 
 BITS 16
 ORG 0x7C00
@@ -17,19 +17,11 @@ start:
     mov ss, ax
     mov sp, 0x7C00
 
-    ; A
-    mov si, msg_a
-    call print_string
-
     ; Reset disk
     xor ah, ah
     mov dl, [boot_drive]
     int 0x13
     jc disk_error
-
-    ; B
-    mov si, msg_b
-    call print_string
 
     ; ------------------------------------
     ; Load kernel
@@ -63,9 +55,12 @@ load_kernel:
 
     jnz load_kernel
 
-    ; C
-    mov si, msg_c
-    call print_string
+    ; ------------------------------------
+    ; Switch VGA to 320x200 Mode 13h
+    ; ------------------------------------
+
+    mov ax, 0x0013
+    int 0x10
 
     ; ------------------------------------
     ; Load GDT
@@ -84,10 +79,6 @@ load_kernel:
 
     ; ------------------------------------
     ; 32-bit far jump
-    ;
-    ; protected_mode already contains
-    ; the ORG-adjusted address 0x7Cxx.
-    ; DO NOT add 0x7C00 again.
     ; ------------------------------------
 
     db 0x66
@@ -159,12 +150,6 @@ protected_mode:
 
     cld
 
-    ; D
-    mov word [0xB8000], 0x0F44
-
-    ; E
-    mov word [0xB8002], 0x0F45
-
     ; Jump to kernel
     mov eax, 0x1000
     jmp eax
@@ -231,15 +216,6 @@ sectors_left:
 ; ========================================
 ; Messages
 ; ========================================
-
-msg_a:
-    db 'A', 0
-
-msg_b:
-    db 'B', 0
-
-msg_c:
-    db 'C', 0
 
 msg_error:
     db 'X', 0
