@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 2.7 - Smoother Desktop + Terminal Controls
+// Version 2.7 - Stable Terminal Desktop
 
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 200
@@ -31,7 +31,11 @@ extern int mouse_get_packet(
     unsigned char *buttons
 );
 
-/* Compact 5x7 uppercase font. */
+
+/* =========================
+   FONT
+   ========================= */
+
 static const unsigned char font[26][7] = {
     {14,17,17,31,17,17,17},
     {30,17,17,30,17,17,30},
@@ -110,23 +114,11 @@ static void draw_char(
     }
     else if (c == '-')
     {
-        graphics_rectangle(
-            x,
-            y + 3,
-            5,
-            1,
-            color
-        );
+        graphics_rectangle(x, y + 3, 5, 1, color);
     }
     else if (c == '_')
     {
-        graphics_rectangle(
-            x,
-            y + 6,
-            5,
-            1,
-            color
-        );
+        graphics_rectangle(x, y + 6, 5, 1, color);
     }
     else if (c == '>')
     {
@@ -138,31 +130,12 @@ static void draw_char(
     }
     else if (c == ':')
     {
-        graphics_rectangle(
-            x + 2,
-            y + 2,
-            2,
-            2,
-            color
-        );
-
-        graphics_rectangle(
-            x + 2,
-            y + 5,
-            2,
-            2,
-            color
-        );
+        graphics_rectangle(x + 2, y + 2, 2, 2, color);
+        graphics_rectangle(x + 2, y + 5, 2, 2, color);
     }
     else if (c == '.')
     {
-        graphics_rectangle(
-            x + 2,
-            y + 6,
-            2,
-            1,
-            color
-        );
+        graphics_rectangle(x + 2, y + 6, 2, 1, color);
     }
 }
 
@@ -195,18 +168,15 @@ static int string_equal(
         b++;
     }
 
-    return *a == 0 && *b == 0;
+    return (*a == 0 && *b == 0);
 }
 
 
 /* =========================
-   DESKTOP STATE
+   TERMINAL STATE
    ========================= */
 
 static int terminal_open = 0;
-
-static char terminal_input[64];
-static int terminal_length = 0;
 
 static int terminal_x = 25;
 static int terminal_y = 25;
@@ -216,39 +186,14 @@ static int terminal_dragging = 0;
 static int terminal_drag_offset_x = 0;
 static int terminal_drag_offset_y = 0;
 
+static char terminal_input[64];
+static int terminal_length = 0;
 
-/* =========================
-   TERMINAL OUTPUT
-   ========================= */
 
-static char terminal_output[5][43];
-
-static void clear_output(void)
-{
-    for (int row = 0; row < 5; row++)
-    {
-        terminal_output[row][0] = 0;
-    }
-}
-
-static void set_output(
-    int row,
-    const char *text
-)
-{
-    if (row < 0 || row >= 5)
-        return;
-
-    int i = 0;
-
-    while (text[i] && i < 42)
-    {
-        terminal_output[row][i] = text[i];
-        i++;
-    }
-
-    terminal_output[row][i] = 0;
-}
+/* Terminal output lines. */
+static char output_line_1[43];
+static char output_line_2[43];
+static char output_line_3[43];
 
 
 /* =========================
@@ -261,39 +206,86 @@ static int mouse_y = 100;
 static unsigned char mouse_buttons = 0;
 
 
-/*
- * Save the pixels underneath the cursor.
- *
- * This lets us move the cursor without
- * redrawing the entire screen every time.
- */
-static unsigned char cursor_background[9][9];
+/* =========================
+   TERMINAL OUTPUT
+   ========================= */
 
-static int cursor_saved = 0;
-
-static void save_cursor_background(void)
+static void clear_output(void)
 {
-    for (int y = 0; y < 9; y++)
+    output_line_1[0] = 0;
+    output_line_2[0] = 0;
+    output_line_3[0] = 0;
+}
+
+static void copy_text(
+    char *destination,
+    const char *source
+)
+{
+    int i = 0;
+
+    while (source[i] && i < 42)
     {
-        for (int x = 0; x < 9; x++)
-        {
-            /*
-             * We cannot directly read the framebuffer
-             * through the graphics driver, so this
-             * function is intentionally left empty.
-             *
-             * The cursor is instead restored by redrawing
-             * the affected desktop/window area.
-             */
-        }
+        destination[i] = source[i];
+        i++;
     }
 
-    cursor_saved = 1;
+    destination[i] = 0;
+}
+
+static void terminal_command(void)
+{
+    clear_output();
+
+    if (string_equal(terminal_input, "help"))
+    {
+        copy_text(
+            output_line_1,
+            "COMMANDS:"
+        );
+
+        copy_text(
+            output_line_2,
+            "HELP ABOUT CLEAR EXIT"
+        );
+    }
+    else if (string_equal(terminal_input, "about"))
+    {
+        copy_text(
+            output_line_1,
+            "MATRIXOS VERSION 2.7"
+        );
+
+        copy_text(
+            output_line_2,
+            "MATRIXBOOK DESKTOP"
+        );
+    }
+    else if (string_equal(terminal_input, "clear"))
+    {
+        clear_output();
+    }
+    else if (string_equal(terminal_input, "exit"))
+    {
+        terminal_open = 0;
+    }
+    else if (terminal_length > 0)
+    {
+        copy_text(
+            output_line_1,
+            "UNKNOWN COMMAND"
+        );
+
+        copy_text(
+            output_line_2,
+            "TYPE HELP"
+        );
+    }
 }
 
 
 /* =========================
-   DESKTOP ICONS
+   ICONS
    ========================= */
 
 static void draw_terminal_icon(
@@ -408,7 +400,7 @@ static void draw_close_button(void)
     int center_y = terminal_y + 8;
 
     /*
-     * Red circular close button.
+     * Draw a small red circular button.
      */
     for (int y = -4; y <= 4; y++)
     {
@@ -428,11 +420,14 @@ static void draw_close_button(void)
 
 static void draw_terminal_window(void)
 {
+    int x;
+    int y;
+
     if (!terminal_open)
         return;
 
-    int x = terminal_x;
-    int y = terminal_y;
+    x = terminal_x;
+    y = terminal_y;
 
     /* Shadow. */
     graphics_rectangle(
@@ -443,7 +438,7 @@ static void draw_terminal_window(void)
         BLACK
     );
 
-    /* Window border. */
+    /* Border. */
     graphics_rectangle(
         x,
         y,
@@ -471,7 +466,7 @@ static void draw_terminal_window(void)
     /* Red close button. */
     draw_close_button();
 
-    /* Window body. */
+    /* Body. */
     graphics_rectangle(
         x,
         y + 20,
@@ -494,25 +489,38 @@ static void draw_terminal_window(void)
         WHITE
     );
 
-    /*
-     * Persistent command output.
-     */
-    for (int row = 0; row < 5; row++)
+    /* Persistent output. */
+    if (output_line_1[0])
     {
-        if (terminal_output[row][0])
-        {
-            draw_text(
-                x + 12,
-                y + 51 + row * 9,
-                terminal_output[row],
-                WHITE
-            );
-        }
+        draw_text(
+            x + 12,
+            y + 51,
+            output_line_1,
+            WHITE
+        );
     }
 
-    /*
-     * Command prompt.
-     */
+    if (output_line_2[0])
+    {
+        draw_text(
+            x + 12,
+            y + 60,
+            output_line_2,
+            WHITE
+        );
+    }
+
+    if (output_line_3[0])
+    {
+        draw_text(
+            x + 12,
+            y + 69,
+            output_line_3,
+            WHITE
+        );
+    }
+
+    /* Prompt. */
     draw_text(
         x + 12,
         y + 102,
@@ -527,9 +535,7 @@ static void draw_terminal_window(void)
         WHITE
     );
 
-    /*
-     * Cursor.
-     */
+    /* Text cursor. */
     graphics_rectangle(
         x + 90 + terminal_length * 6,
         y + 101,
@@ -571,7 +577,7 @@ static void draw_desktop(void)
         WHITE
     );
 
-    /* Icons. */
+    /* Desktop icons. */
     draw_terminal_icon(20, 35);
     draw_files_icon(100, 35);
     draw_settings_icon(180, 35);
@@ -626,7 +632,7 @@ static void draw_desktop(void)
 
 
 /* =========================
-   MOUSE CURSOR
+   CURSOR
    ========================= */
 
 static void draw_cursor(void)
@@ -651,12 +657,10 @@ static void draw_cursor(void)
 }
 
 
-/*
- * Redraw the whole desktop.
- *
- * This is now only used when something
- * actually changes visually.
- */
+/* =========================
+   FULL REDRAW
+   ========================= */
+
 static void redraw_all(void)
 {
     draw_desktop();
@@ -665,7 +669,7 @@ static void redraw_all(void)
 
 
 /* =========================
-   MOUSE HANDLING
+   MOUSE
    ========================= */
 
 static void handle_mouse(void)
@@ -684,23 +688,12 @@ static void handle_mouse(void)
     }
 
     /*
-     * If the window is not being dragged,
-     * we redraw the desktop first.
-     *
-     * This prevents the old cursor from
-     * remaining on screen.
+     * Move cursor.
      */
-    if (!terminal_dragging)
-    {
-        draw_desktop();
-    }
-
     mouse_x += dx;
     mouse_y -= dy;
 
-    /*
-     * Keep cursor inside screen.
-     */
+    /* Screen limits. */
     if (mouse_x < 0)
         mouse_x = 0;
 
@@ -715,13 +708,13 @@ static void handle_mouse(void)
 
 
     /*
-     * Left button JUST pressed.
+     * Left button pressed.
      */
     if ((buttons & 1) &&
         !(mouse_buttons & 1))
     {
         /*
-         * Terminal icon.
+         * Open Terminal.
          */
         if (mouse_x >= 20 &&
             mouse_x < 62 &&
@@ -739,26 +732,186 @@ static void handle_mouse(void)
         }
 
         /*
-         * Red close button.
+         * Close Terminal.
          */
-        else if (terminal_open &&
-                 mouse_x >= terminal_x + 252 &&
-                 mouse_x <= terminal_x + 266 &&
-                 mouse_y >= terminal_y + 2 &&
-                 mouse_y <= terminal_y + 14)
+        else if (
+            terminal_open &&
+            mouse_x >= terminal_x + 250 &&
+            mouse_x <= terminal_x + 267 &&
+            mouse_y >= terminal_y + 1 &&
+            mouse_y <= terminal_y + 15
+        )
         {
             terminal_open = 0;
-
             terminal_dragging = 0;
 
             redraw_all();
         }
 
         /*
-         * Terminal title bar.
+         * Start dragging Terminal.
          */
-        else if (terminal_open &&
-                 mouse_x >= terminal_x &&
-                 mouse_x < terminal_x + 270 &&
-                 mouse_y >= terminal_y &&
-                 mouse_y < terminal
+        else if (
+            terminal_open &&
+            mouse_x >= terminal_x &&
+            mouse_x < terminal_x + 270 &&
+            mouse_y >= terminal_y &&
+            mouse_y < terminal_y + 16
+        )
+        {
+            terminal_dragging = 1;
+
+            terminal_drag_offset_x =
+                mouse_x - terminal_x;
+
+            terminal_drag_offset_y =
+                mouse_y - terminal_y;
+        }
+    }
+
+
+    /*
+     * Drag Terminal while button
+     * is held.
+     */
+    if ((buttons & 1) &&
+        terminal_dragging)
+    {
+        terminal_x =
+            mouse_x - terminal_drag_offset_x;
+
+        terminal_y =
+            mouse_y - terminal_drag_offset_y;
+
+        /*
+         * Horizontal limits.
+         */
+        if (terminal_x < 0)
+            terminal_x = 0;
+
+        if (terminal_x >
+            SCREEN_WIDTH - 270)
+        {
+            terminal_x =
+                SCREEN_WIDTH - 270;
+        }
+
+        /*
+         * Vertical limits.
+         */
+        if (terminal_y < 18)
+            terminal_y = 18;
+
+        if (terminal_y >
+            SCREEN_HEIGHT - 140)
+        {
+            terminal_y =
+                SCREEN_HEIGHT - 140;
+        }
+
+        redraw_all();
+    }
+
+
+    /*
+     * Button released.
+     */
+    if (!(buttons & 1))
+    {
+        terminal_dragging = 0;
+    }
+
+    mouse_buttons = buttons;
+
+    /*
+     * Redraw the final cursor.
+     */
+    draw_cursor();
+}
+
+
+/* =========================
+   KERNEL
+   ========================= */
+
+void kernel_main(void)
+{
+    mouse_init();
+
+    terminal_open = 0;
+
+    terminal_x = 25;
+    terminal_y = 25;
+
+    terminal_dragging = 0;
+
+    terminal_length = 0;
+    terminal_input[0] = 0;
+
+    clear_output();
+
+    redraw_all();
+
+    while (1)
+    {
+        handle_mouse();
+
+        if (terminal_open)
+        {
+            char c;
+
+            c = keyboard_get_char();
+
+            if (c)
+            {
+                /*
+                 * Backspace.
+                 */
+                if (c == '\b')
+                {
+                    if (terminal_length > 0)
+                    {
+                        terminal_length--;
+
+                        terminal_input[
+                            terminal_length
+                        ] = 0;
+                    }
+
+                    redraw_all();
+                }
+
+                /*
+                 * Enter.
+                 */
+                else if (c == '\n')
+                {
+                    terminal_command();
+
+                    terminal_length = 0;
+                    terminal_input[0] = 0;
+
+                    redraw_all();
+                }
+
+                /*
+                 * Normal character.
+                 */
+                else if (terminal_length < 63)
+                {
+                    terminal_input[
+                        terminal_length
+                    ] = c;
+
+                    terminal_length++;
+
+                    terminal_input[
+                        terminal_length
+                    ] = 0;
+
+                    redraw_all();
+                }
+            }
+        }
+    }
+}
