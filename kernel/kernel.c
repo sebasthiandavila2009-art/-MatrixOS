@@ -1,5 +1,5 @@
 // MatrixOS Kernel
-// Version 2.5 - Mouse Enabled Desktop
+// Version 2.6 - Draggable Terminal Windows
 
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 200
@@ -41,16 +41,25 @@ static const unsigned char digits[10][7] = {
 static void draw_char(int x, int y, char c, unsigned char color)
 {
     const unsigned char *g = 0;
-    if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
-    if (c >= 'A' && c <= 'Z') g = font[c - 'A'];
-    else if (c >= '0' && c <= '9') g = digits[c - '0'];
+
+    if (c >= 'a' && c <= 'z')
+        c = (char)(c - 'a' + 'A');
+
+    if (c >= 'A' && c <= 'Z')
+        g = font[c - 'A'];
+    else if (c >= '0' && c <= '9')
+        g = digits[c - '0'];
 
     if (g)
     {
         for (int row = 0; row < 7; row++)
+        {
             for (int col = 0; col < 5; col++)
+            {
                 if (g[row] & (1 << (4 - col)))
                     graphics_put_pixel(x + col, y + row, color);
+            }
+        }
     }
     else if (c == '-')
     {
@@ -93,17 +102,31 @@ static int string_equal(const char *a, const char *b)
 {
     while (*a && *b)
     {
-        if (*a != *b) return 0;
-        a++; b++;
+        if (*a != *b)
+            return 0;
+
+        a++;
+        b++;
     }
+
     return *a == 0 && *b == 0;
 }
 
 /* Desktop state. */
 static int terminal_open = 0;
+
 static char terminal_input[64];
 static int terminal_length = 0;
 
+/* Terminal window position. */
+static int terminal_x = 25;
+static int terminal_y = 25;
+
+static int terminal_dragging = 0;
+static int terminal_drag_offset_x = 0;
+static int terminal_drag_offset_y = 0;
+
+/* Mouse state. */
 static int mouse_x = 160;
 static int mouse_y = 100;
 static unsigned char mouse_buttons = 0;
@@ -112,6 +135,7 @@ static void draw_terminal_icon(int x, int y)
 {
     graphics_rectangle(x, y, 42, 32, BLACK);
     graphics_rectangle(x + 2, y + 2, 38, 28, WHITE);
+
     draw_char(x + 7, y + 9, '>', BLACK);
     draw_char(x + 14, y + 9, '_', BLACK);
 }
@@ -136,28 +160,52 @@ static void draw_about_icon(int x, int y)
 
 static void draw_terminal_window(void)
 {
-    if (!terminal_open) return;
+    if (!terminal_open)
+        return;
 
-    graphics_rectangle(28, 28, 270, 140, BLACK);
-    graphics_rectangle(25, 25, 270, 140, WHITE);
-    graphics_rectangle(25, 25, 270, 16, BLACK);
-    draw_text(33, 30, "MATRIX TERMINAL", WHITE);
-    graphics_rectangle(25, 45, 270, 120, BLACK);
+    int x = terminal_x;
+    int y = terminal_y;
 
-    draw_text(37, 52, "MATRIXOS TERMINAL", GREEN);
-    draw_text(37, 64, "TYPE HELP FOR COMMANDS", WHITE);
-    draw_text(37, 82, "MATRIXBOOK $", GREEN);
-    draw_text(115, 82, terminal_input, WHITE);
-    graphics_rectangle(115 + terminal_length * 6, 81, 5, 8, WHITE);
+    /* Window shadow/background. */
+    graphics_rectangle(x + 3, y + 3, 270, 140, BLACK);
+
+    /* Window border. */
+    graphics_rectangle(x, y, 270, 140, WHITE);
+
+    /* Title bar. */
+    graphics_rectangle(x, y, 270, 16, BLACK);
+
+    draw_text(x + 8, y + 5, "MATRIX TERMINAL", WHITE);
+
+    /* Window body. */
+    graphics_rectangle(x, y + 20, 270, 120, BLACK);
+
+    draw_text(x + 12, y + 27, "MATRIXOS TERMINAL", GREEN);
+    draw_text(x + 12, y + 39, "TYPE HELP FOR COMMANDS", WHITE);
+
+    draw_text(x + 12, y + 57, "MATRIXBOOK $", GREEN);
+    draw_text(x + 90, y + 57, terminal_input, WHITE);
+
+    graphics_rectangle(
+        x + 90 + terminal_length * 6,
+        y + 56,
+        5,
+        8,
+        WHITE
+    );
 }
 
 static void draw_desktop(void)
 {
     graphics_clear(BLUE);
+
+    /* Top bar. */
     graphics_rectangle(0, 0, SCREEN_WIDTH, 18, BLACK);
+
     draw_text(8, 5, "MATRIXBOOK", WHITE);
     draw_text(250, 5, "MATRIXOS", WHITE);
 
+    /* Desktop icons. */
     draw_terminal_icon(20, 35);
     draw_files_icon(100, 35);
     draw_settings_icon(180, 35);
@@ -168,6 +216,7 @@ static void draw_desktop(void)
     draw_text(181, 72, "SETTINGS", WHITE);
     draw_text(266, 72, "ABOUT", WHITE);
 
+    /* Bottom dock. */
     graphics_rectangle(45, 170, 230, 25, BLACK);
     draw_text(58, 179, "TERMINAL", WHITE);
 
@@ -178,9 +227,20 @@ static void draw_cursor(void)
 {
     for (int i = 0; i < 9; i++)
     {
-        graphics_put_pixel(mouse_x, mouse_y + i, WHITE);
+        graphics_put_pixel(
+            mouse_x,
+            mouse_y + i,
+            WHITE
+        );
+
         if (i < 6)
-            graphics_put_pixel(mouse_x + i, mouse_y + i, WHITE);
+        {
+            graphics_put_pixel(
+                mouse_x + i,
+                mouse_y + i,
+                WHITE
+            );
+        }
     }
 }
 
@@ -192,7 +252,8 @@ static void redraw(void)
 
 static void handle_mouse(void)
 {
-    int dx, dy;
+    int dx;
+    int dy;
     unsigned char buttons;
 
     if (!mouse_get_packet(&dx, &dy, &buttons))
@@ -201,26 +262,93 @@ static void handle_mouse(void)
     mouse_x += dx;
     mouse_y -= dy;
 
-    if (mouse_x < 0) mouse_x = 0;
-    if (mouse_x > SCREEN_WIDTH - 2) mouse_x = SCREEN_WIDTH - 2;
-    if (mouse_y < 18) mouse_y = 18;
-    if (mouse_y > SCREEN_HEIGHT - 9) mouse_y = SCREEN_HEIGHT - 9;
+    /* Keep cursor inside the screen. */
+    if (mouse_x < 0)
+        mouse_x = 0;
 
+    if (mouse_x > SCREEN_WIDTH - 2)
+        mouse_x = SCREEN_WIDTH - 2;
+
+    if (mouse_y < 18)
+        mouse_y = 18;
+
+    if (mouse_y > SCREEN_HEIGHT - 9)
+        mouse_y = SCREEN_HEIGHT - 9;
+
+    /* Left mouse button was just pressed. */
     if ((buttons & 1) && !(mouse_buttons & 1))
     {
-        if (mouse_x >= 20 && mouse_x < 62 && mouse_y >= 35 && mouse_y < 67)
+        /*
+         * Terminal icon.
+         */
+        if (mouse_x >= 20 &&
+            mouse_x < 62 &&
+            mouse_y >= 35 &&
+            mouse_y < 67)
         {
             terminal_open = 1;
             terminal_length = 0;
             terminal_input[0] = 0;
         }
-        else if (terminal_open && mouse_x >= 280 && mouse_x < 295 && mouse_y >= 25 && mouse_y < 45)
+
+        /*
+         * Terminal title bar.
+         * Start dragging the window.
+         */
+        else if (terminal_open &&
+                 mouse_x >= terminal_x &&
+                 mouse_x < terminal_x + 270 &&
+                 mouse_y >= terminal_y &&
+                 mouse_y < terminal_y + 16)
         {
-            terminal_open = 0;
+            terminal_dragging = 1;
+
+            terminal_drag_offset_x =
+                mouse_x - terminal_x;
+
+            terminal_drag_offset_y =
+                mouse_y - terminal_y;
         }
     }
 
+    /*
+     * While the left button is held,
+     * move the terminal window.
+     */
+    if ((buttons & 1) && terminal_dragging)
+    {
+        terminal_x =
+            mouse_x - terminal_drag_offset_x;
+
+        terminal_y =
+            mouse_y - terminal_drag_offset_y;
+
+        /* Keep window inside screen horizontally. */
+        if (terminal_x < 0)
+            terminal_x = 0;
+
+        if (terminal_x > SCREEN_WIDTH - 270)
+            terminal_x = SCREEN_WIDTH - 270;
+
+        /* Keep window below the top bar. */
+        if (terminal_y < 18)
+            terminal_y = 18;
+
+        /* Keep window inside screen vertically. */
+        if (terminal_y > SCREEN_HEIGHT - 140)
+            terminal_y = SCREEN_HEIGHT - 140;
+    }
+
+    /*
+     * Mouse button released.
+     */
+    if (!(buttons & 1))
+    {
+        terminal_dragging = 0;
+    }
+
     mouse_buttons = buttons;
+
     redraw();
 }
 
@@ -228,16 +356,38 @@ static void terminal_command(void)
 {
     if (string_equal(terminal_input, "help"))
     {
-        draw_text(37, 100, "HELP  ABOUT  CLEAR  EXIT", WHITE);
+        draw_text(
+            terminal_x + 12,
+            terminal_y + 75,
+            "HELP ABOUT CLEAR EXIT",
+            WHITE
+        );
     }
     else if (string_equal(terminal_input, "about"))
     {
-        draw_text(37, 100, "MATRIXOS VERSION 2.5", GREEN);
-        draw_text(37, 112, "MATRIXBOOK DESKTOP", WHITE);
+        draw_text(
+            terminal_x + 12,
+            terminal_y + 75,
+            "MATRIXOS VERSION 2.6",
+            GREEN
+        );
+
+        draw_text(
+            terminal_x + 12,
+            terminal_y + 87,
+            "MATRIXBOOK DESKTOP",
+            WHITE
+        );
     }
     else if (string_equal(terminal_input, "clear"))
     {
-        graphics_rectangle(30, 95, 260, 60, BLACK);
+        graphics_rectangle(
+            terminal_x + 5,
+            terminal_y + 65,
+            260,
+            65,
+            BLACK
+        );
     }
     else if (string_equal(terminal_input, "exit"))
     {
@@ -248,6 +398,7 @@ static void terminal_command(void)
 void kernel_main(void)
 {
     mouse_init();
+
     redraw();
 
     while (1)
@@ -265,12 +416,14 @@ void kernel_main(void)
                     if (terminal_length > 0)
                     {
                         terminal_length--;
+
                         terminal_input[terminal_length] = 0;
                     }
                 }
                 else if (c == '\n')
                 {
                     terminal_command();
+
                     terminal_length = 0;
                     terminal_input[0] = 0;
                 }
