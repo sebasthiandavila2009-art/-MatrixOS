@@ -1,12 +1,14 @@
 // MatrixOS Graphics Driver
-// Version 0.1
+// Version 0.2 - Shared framebuffer with kernel
 
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 200
 
-// VGA Mode 13h framebuffer
-volatile unsigned char *framebuffer =
-    (unsigned char *)0xA0000;
+/*
+ * The framebuffer is owned by the kernel.
+ * Do not define it again here.
+ */
+extern volatile unsigned char *framebuffer;
 
 /*
  * Draw one pixel.
