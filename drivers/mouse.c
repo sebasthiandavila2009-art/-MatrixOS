@@ -143,28 +143,22 @@ int mouse_get_packet(
     unsigned char value;
     unsigned char status;
 
-    /*
-     * Do not block waiting for the mouse.
-     */
     status = inb(MOUSE_STATUS_PORT);
 
     if ((status & 1) == 0)
         return 0;
 
-    /*
-     * Bit 5 means the byte came from the auxiliary
-     * mouse device instead of the keyboard.
-     */
     if ((status & 0x20) == 0)
         return 0;
 
     value = inb(MOUSE_DATA_PORT);
 
     /*
-     * The first byte of a standard PS/2 packet
-     * always has bit 3 set.
+     * PS/2 mouse packet byte 0 always has bit 3 set.
+     * If it is not set, discard the byte and wait for
+     * a real packet boundary.
      */
-    if (packet_index == 0 && (value & 0x08) == 0)
+    if (packet_index == 0 && !(value & 0x08))
         return 0;
 
     packet[packet_index++] = value;
@@ -179,9 +173,6 @@ int mouse_get_packet(
     *dx = (int)(signed char)packet[1];
     *dy = (int)(signed char)packet[2];
 
-    /*
-     * Ignore packets with X/Y overflow.
-     */
     if (packet[0] & 0xC0)
     {
         *dx = 0;
@@ -190,3 +181,4 @@ int mouse_get_packet(
 
     return 1;
 }
+

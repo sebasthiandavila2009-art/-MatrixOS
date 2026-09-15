@@ -264,6 +264,9 @@ static int files_drag_offset_y = 0;
 static const char *files_current_dir = "/";
 static int files_entries[16];
 static int files_entry_count = 0;
+static int files_viewing_file = 0;
+static int files_viewed_entry = -1;
+static int files_click_armed = 0;
 
 static int terminal_open = 0;
 
@@ -293,6 +296,7 @@ static int mouse_x = 160;
 static int mouse_y = 100;
 
 static unsigned char mouse_buttons = 0;
+static unsigned char previous_mouse_buttons = 0;
 
 
 /*
@@ -522,6 +526,30 @@ static void draw_folder_icon(int x, int y) {
     graphics_rectangle(x + 3, y, 9, 5, WHITE);
 }
 
+static void files_open_entry(int entry)
+{
+    if (matrixfs_is_directory(entry))
+    {
+        files_current_dir = matrixfs_name(entry);
+        files_viewing_file = 0;
+        files_viewed_entry = -1;
+    }
+    else
+    {
+        files_viewing_file = 1;
+        files_viewed_entry = entry;
+    }
+}
+
+static void files_go_back(void)
+{
+    files_viewing_file = 0;
+    files_viewed_entry = -1;
+
+    if (!string_equal(files_current_dir, "/"))
+        files_current_dir = "/";
+}
+
 static void draw_files_window(void)
 {
     int x = files_x;
@@ -530,32 +558,9 @@ static void draw_files_window(void)
     if (!files_open)
         return;
 
-    /* Shadow. */
-    graphics_rectangle(
-        x + 3,
-        y + 3,
-        FILES_WIDTH,
-        FILES_HEIGHT,
-        BLACK
-    );
-
-    /* Window border. */
-    graphics_rectangle(
-        x,
-        y,
-        FILES_WIDTH,
-        FILES_HEIGHT,
-        WHITE
-    );
-
-    /* Title bar. */
-    graphics_rectangle(
-        x,
-        y,
-        FILES_WIDTH,
-        16,
-        BLACK
-    );
+    graphics_rectangle(x + 3, y + 3, FILES_WIDTH, FILES_HEIGHT, BLACK);
+    graphics_rectangle(x, y, FILES_WIDTH, FILES_HEIGHT, WHITE);
+    graphics_rectangle(x, y, FILES_WIDTH, 16, BLACK);
 
     draw_text(
         x + 8,
@@ -566,7 +571,6 @@ static void draw_files_window(void)
 
     draw_files_close_button();
 
-    /* Window body. */
     graphics_rectangle(
         x,
         y + 20,
@@ -575,15 +579,42 @@ static void draw_files_window(void)
         BLACK
     );
 
-    /*
-     * Read the actual MatrixFS directory.
-     *
-     * The old version drew SYSTEM,
-     * DOCUMENTS and DOWNLOADS manually.
-     *
-     * Now the UI gets its entries from
-     * matrixfs.c.
-     */
+    if (files_viewing_file && files_viewed_entry >= 0)
+    {
+        draw_text(
+            x + 12,
+            y + 28,
+            matrixfs_name(files_viewed_entry),
+            GREEN
+        );
+
+        draw_text(
+            x + 12,
+            y + 48,
+            matrixfs_read(files_viewed_entry),
+            WHITE
+        );
+
+        draw_text(
+            x + 12,
+            y + 105,
+            "BACK",
+            GRAY
+        );
+
+        return;
+    }
+
+    if (!string_equal(files_current_dir, "/"))
+    {
+        draw_text(
+            x + 12,
+            y + 27,
+            "< BACK",
+            GRAY
+        );
+    }
+
     files_entry_count = matrixfs_list(
         files_current_dir,
         files_entries,
@@ -593,7 +624,7 @@ static void draw_files_window(void)
     for (int i = 0; i < files_entry_count; i++)
     {
         int entry = files_entries[i];
-        int row_y = y + 31 + (i * 25);
+        int row_y = y + 43 + (i * 25);
 
         if (row_y + 12 >= y + FILES_HEIGHT)
             break;
@@ -607,9 +638,6 @@ static void draw_files_window(void)
         }
         else
         {
-            /*
-             * Simple file icon.
-             */
             graphics_rectangle(
                 x + 13,
                 row_y,
@@ -655,7 +683,7 @@ static void draw_files_window(void)
     {
         draw_text(
             x + 12,
-            y + 35,
+            y + 50,
             "EMPTY",
             GRAY
         );
@@ -1085,37 +1113,230 @@ static void handle_mouse(void)
 {
     int dx;
     int dy;
-
     unsigned char buttons;
 
-    if (!mouse_get_packet(
-            &dx,
-            &dy,
-            &buttons))
-    {
+    if (!mouse_get_packet(&dx, &dy, &buttons))
         return;
-    }
 
     /*
-     * Move cursor without redrawing
-     * the entire desktop.
+     * A click is ONLY a 0 -> 1 transition.
+     *
+     * This is deliberately calculated once for
+     * the entire mouse packet. Hovering and motion
+     * can never become a click.
+     */
+    int left_pressed =
+        ((buttons & 1) != 0) &&
+        ((mouse_buttons & 1) == 0);
+
+    int left_released =
+        ((buttons & 1) == 0) &&
+        ((mouse_buttons & 1) != 0);
+
+    /*
+     * Move cursor first.
      */
     if (dx != 0 || dy != 0)
     {
-        move_cursor(
-            dx,
-            dy
-        );
+        move_cursor(dx, dy);
     }
 
+    /*
+     * Mouse release.
+     *
+     * A release ends dragging and arms Files
+     * for the NEXT real press.
+     */
+    if (left_released)
+    {
+        terminal_dragging = 0;
+        files_dragging = 0;
+
+        if (files_open)
+            files_click_armed = 1;
+    }
 
     /*
-     * Open Files.
+     * =====================================================
+     * FILES WINDOW
+     * =====================================================
      */
-    if ((buttons & 1) &&
-        !(mouse_buttons & 1) &&
+
+    if (files_open)
+    {
+        /*
+         * Drag an already-active Files window.
+         */
+        if (buttons & 1 && files_dragging)
+        {
+            restore_cursor_background();
+
+            files_x = mouse_x - files_drag_offset_x;
+            files_y = mouse_y - files_drag_offset_y;
+
+            if (files_x < 0)
+                files_x = 0;
+
+            if (files_x > SCREEN_WIDTH - FILES_WIDTH)
+                files_x = SCREEN_WIDTH - FILES_WIDTH;
+
+            if (files_y < 18)
+                files_y = 18;
+
+            if (files_y > SCREEN_HEIGHT - FILES_HEIGHT)
+                files_y = SCREEN_HEIGHT - FILES_HEIGHT;
+
+            draw_desktop();
+            draw_cursor();
+        }
+
+        /*
+         * ONLY a real press can interact with Files.
+         */
+        if (left_pressed && files_click_armed)
+        {
+            /*
+             * Close button.
+             */
+            if (mouse_x >= files_x + FILES_WIDTH - 22 &&
+                mouse_x <= files_x + FILES_WIDTH - 3 &&
+                mouse_y >= files_y + 1 &&
+                mouse_y <= files_y + 15)
+            {
+                files_open = 0;
+                files_dragging = 0;
+                files_click_armed = 0;
+
+                redraw_all();
+            }
+
+            /*
+             * Title bar.
+             */
+            else if (mouse_x >= files_x &&
+                     mouse_x < files_x + FILES_WIDTH &&
+                     mouse_y >= files_y &&
+                     mouse_y < files_y + 16)
+            {
+                files_dragging = 1;
+
+                files_drag_offset_x =
+                    mouse_x - files_x;
+
+                files_drag_offset_y =
+                    mouse_y - files_y;
+
+                files_click_armed = 0;
+            }
+
+            /*
+             * Files contents.
+             */
+            else
+            {
+                /*
+                 * Rebuild the visible entry list.
+                 */
+                files_entry_count =
+                    matrixfs_list(
+                        files_current_dir,
+                        files_entries,
+                        16
+                    );
+
+                /*
+                 * BACK while inside a directory.
+                 */
+                if (!string_equal(files_current_dir, "/") &&
+                    mouse_x >= files_x &&
+                    mouse_x < files_x + 100 &&
+                    mouse_y >= files_y + 20 &&
+                    mouse_y < files_y + 43)
+                {
+                    files_click_armed = 0;
+                    files_current_dir = "/";
+                    files_viewing_file = 0;
+                    files_viewed_entry = -1;
+
+                    redraw_all();
+                }
+
+                /*
+                 * File view BACK.
+                 */
+                else if (files_viewing_file &&
+                         mouse_x >= files_x &&
+                         mouse_x < files_x + 100 &&
+                         mouse_y >= files_y + 95 &&
+                         mouse_y < files_y + FILES_HEIGHT)
+                {
+                    files_click_armed = 0;
+                    files_viewing_file = 0;
+                    files_viewed_entry = -1;
+
+                    redraw_all();
+                }
+
+                /*
+                 * Entry click.
+                 */
+                else if (!files_viewing_file)
+                {
+                    for (int i = 0;
+                         i < files_entry_count;
+                         i++)
+                    {
+                        int entry = files_entries[i];
+
+                        int row_y =
+                            files_y + 31 + (i * 25);
+
+                        if (mouse_x < files_x + 8 ||
+                            mouse_x >= files_x + FILES_WIDTH - 8)
+                            continue;
+
+                        if (mouse_y < row_y - 3 ||
+                            mouse_y >= row_y + 21)
+                            continue;
+
+                        /*
+                         * Consume this press immediately.
+                         */
+                        files_click_armed = 0;
+
+                        if (matrixfs_is_directory(entry))
+                        {
+                            files_current_dir =
+                                matrixfs_name(entry);
+
+                            files_viewing_file = 0;
+                            files_viewed_entry = -1;
+                        }
+                        else
+                        {
+                            files_viewing_file = 1;
+                            files_viewed_entry = entry;
+                        }
+
+                        redraw_all();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /*
+     * =====================================================
+     * OPEN FILES FROM DESKTOP
+     * =====================================================
+     *
+     * This is outside the Files window so that the
+     * launch click cannot also activate a Files entry.
+     */
+    if (!files_open &&
         !terminal_open &&
-        !files_open &&
+        left_pressed &&
         mouse_x >= 100 &&
         mouse_x < 142 &&
         mouse_y >= 35 &&
@@ -1123,199 +1344,121 @@ static void handle_mouse(void)
     {
         files_open = 1;
         files_dragging = 0;
+
+        /*
+         * Consume the launch click.
+         */
+        files_click_armed = 0;
+
         redraw_all();
     }
 
     /*
-     * Files window controls.
+     * =====================================================
+     * TERMINAL
+     * =====================================================
      */
-    if ((buttons & 1) &&
-        !(mouse_buttons & 1) &&
-        files_open)
+
+    if (terminal_open)
     {
         /*
-         * Close Files.
+         * Drag Terminal.
          */
-        if (mouse_x >= files_x + FILES_WIDTH - 22 &&
-            mouse_x <= files_x + FILES_WIDTH - 3 &&
-            mouse_y >= files_y + 1 &&
-            mouse_y <= files_y + 15)
+        if ((buttons & 1) && terminal_dragging)
         {
-            files_open = 0;
-            files_dragging = 0;
-            redraw_all();
-        }
+            restore_cursor_background();
 
-        /*
-         * Files title bar.
-         */
-        else if (mouse_x >= files_x &&
-                 mouse_x < files_x + FILES_WIDTH &&
-                 mouse_y >= files_y &&
-                 mouse_y < files_y + 16)
-        {
-            files_dragging = 1;
-
-            files_drag_offset_x =
-                mouse_x - files_x;
-
-            files_drag_offset_y =
-                mouse_y - files_y;
-        }
-    }
-
-    /*
-     * Drag Files.
-     */
-    if ((buttons & 1) &&
-        files_dragging)
-    {
-        restore_cursor_background();
-
-        files_x =
-            mouse_x - files_drag_offset_x;
-
-        files_y =
-            mouse_y - files_drag_offset_y;
-
-        if (files_x < 0)
-            files_x = 0;
-
-        if (files_x > SCREEN_WIDTH - FILES_WIDTH)
-            files_x = SCREEN_WIDTH - FILES_WIDTH;
-
-        if (files_y < 18)
-            files_y = 18;
-
-        if (files_y > SCREEN_HEIGHT - FILES_HEIGHT)
-            files_y = SCREEN_HEIGHT - FILES_HEIGHT;
-
-        draw_desktop();
-        draw_cursor();
-    }
-
-    /*
-     * Left button just pressed.
-     */
-    if ((buttons & 1) &&
-        !(mouse_buttons & 1))
-    {
-        /*
-         * Open Terminal.
-         */
-        if (mouse_x >= 20 &&
-            mouse_x < 62 &&
-            mouse_y >= 35 &&
-            mouse_y < 67)
-        {
-            terminal_open = 1;
-
-            terminal_length = 0;
-            terminal_input[0] = 0;
-
-            clear_output();
-
-            redraw_all();
-        }
-
-        /*
-         * Close button.
-         */
-        else if (
-            terminal_open &&
-            mouse_x >= terminal_x + 250 &&
-            mouse_x <= terminal_x + 267 &&
-            mouse_y >= terminal_y + 1 &&
-            mouse_y <= terminal_y + 15
-        )
-        {
-            terminal_open = 0;
-            terminal_dragging = 0;
-
-            redraw_all();
-        }
-
-        /*
-         * Terminal title bar.
-         */
-        else if (
-            terminal_open &&
-            mouse_x >= terminal_x &&
-            mouse_x < terminal_x + 270 &&
-            mouse_y >= terminal_y &&
-            mouse_y < terminal_y + 16
-        )
-        {
-            terminal_dragging = 1;
-
-            terminal_drag_offset_x =
-                mouse_x - terminal_x;
-
-            terminal_drag_offset_y =
-                mouse_y - terminal_y;
-        }
-    }
-
-
-    /*
-     * Drag Terminal.
-     */
-    if ((buttons & 1) &&
-        terminal_dragging)
-    {
-        /*
-         * Remove cursor before changing
-         * the window underneath it.
-         */
-        restore_cursor_background();
-
-        terminal_x =
-            mouse_x - terminal_drag_offset_x;
-
-        terminal_y =
-            mouse_y - terminal_drag_offset_y;
-
-        if (terminal_x < 0)
-            terminal_x = 0;
-
-        if (terminal_x >
-            SCREEN_WIDTH - 270)
-        {
             terminal_x =
-                SCREEN_WIDTH - 270;
-        }
+                mouse_x - terminal_drag_offset_x;
 
-        if (terminal_y < 18)
-            terminal_y = 18;
-
-        if (terminal_y >
-            SCREEN_HEIGHT - 140)
-        {
             terminal_y =
-                SCREEN_HEIGHT - 140;
+                mouse_y - terminal_drag_offset_y;
+
+            if (terminal_x < 0)
+                terminal_x = 0;
+
+            if (terminal_x > SCREEN_WIDTH - 270)
+                terminal_x = SCREEN_WIDTH - 270;
+
+            if (terminal_y < 18)
+                terminal_y = 18;
+
+            if (terminal_y > SCREEN_HEIGHT - 140)
+                terminal_y = SCREEN_HEIGHT - 140;
+
+            draw_desktop();
+            draw_cursor();
         }
 
         /*
-         * Window moved, so redraw desktop.
+         * Terminal controls only react to a real press.
          */
-        draw_desktop();
+        if (left_pressed)
+        {
+            /*
+             * Close Terminal.
+             */
+            if (mouse_x >= terminal_x + 250 &&
+                mouse_x <= terminal_x + 267 &&
+                mouse_y >= terminal_y + 1 &&
+                mouse_y <= terminal_y + 15)
+            {
+                terminal_open = 0;
+                terminal_dragging = 0;
 
-        draw_cursor();
+                redraw_all();
+            }
+
+            /*
+             * Terminal title bar.
+             */
+            else if (mouse_x >= terminal_x &&
+                     mouse_x < terminal_x + 270 &&
+                     mouse_y >= terminal_y &&
+                     mouse_y < terminal_y + 16)
+            {
+                terminal_dragging = 1;
+
+                terminal_drag_offset_x =
+                    mouse_x - terminal_x;
+
+                terminal_drag_offset_y =
+                    mouse_y - terminal_y;
+            }
+        }
     }
-
 
     /*
-     * Mouse button released.
+     * Open Terminal from desktop.
+     *
+     * Files gets checked first above, so these
+     * desktop icons do not share the same click.
      */
-    if (!(buttons & 1))
+    if (!files_open &&
+        !terminal_open &&
+        left_pressed &&
+        mouse_x >= 20 &&
+        mouse_x < 62 &&
+        mouse_y >= 35 &&
+        mouse_y < 67)
     {
-        terminal_dragging = 0;
-        files_dragging = 0;
+        terminal_open = 1;
+
+        terminal_length = 0;
+        terminal_input[0] = 0;
+
+        clear_output();
+
+        redraw_all();
     }
 
+    /*
+     * The current packet becomes the previous state
+     * ONLY after every click decision has been made.
+     */
+    previous_mouse_buttons = buttons;
     mouse_buttons = buttons;
 }
-
 
 /* =========================
    KERNEL
@@ -1332,6 +1475,13 @@ void kernel_main(void)
     files_x = 45;
     files_y = 30;
     files_dragging = 0;
+
+    files_current_dir = "/";
+    files_viewing_file = 0;
+    files_viewed_entry = -1;
+    files_click_armed = 0;
+    previous_mouse_buttons = 0;
+    mouse_buttons = 0;
 
     terminal_x = 25;
     terminal_y = 25;
