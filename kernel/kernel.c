@@ -65,6 +65,36 @@ extern const char *matrixfs_name(int index);
 
 extern const char *matrixfs_read(int index);
 
+extern int matrixfs_find(
+    const char *parent,
+    const char *name
+);
+
+extern int matrixfs_create_file(
+    const char *parent,
+    const char *name,
+    const char *data
+);
+
+extern int matrixfs_create_directory(
+    const char *parent,
+    const char *name
+);
+
+extern int matrixfs_delete(int index);
+
+extern int matrixfs_rename(
+    int index,
+    const char *new_name
+);
+
+extern int matrixfs_write(
+    int index,
+    const char *data
+);
+
+extern int matrixfs_size(int index);
+
 
 /* =========================
    FONT
@@ -252,7 +282,7 @@ static int string_equal(
    ========================= */
 
 #define FILES_WIDTH 230
-#define FILES_HEIGHT 135
+#define FILES_HEIGHT 170
 
 static int files_open = 0;
 static int files_x = 45;
@@ -267,6 +297,7 @@ static int files_entry_count = 0;
 static int files_viewing_file = 0;
 static int files_viewed_entry = -1;
 static int files_click_armed = 0;
+static int files_selected_entry = -1;
 
 static int terminal_open = 0;
 
@@ -545,6 +576,7 @@ static void files_go_back(void)
 {
     files_viewing_file = 0;
     files_viewed_entry = -1;
+    files_selected_entry = -1;
 
     if (!string_equal(files_current_dir, "/"))
         files_current_dir = "/";
@@ -562,13 +594,7 @@ static void draw_files_window(void)
     graphics_rectangle(x, y, FILES_WIDTH, FILES_HEIGHT, WHITE);
     graphics_rectangle(x, y, FILES_WIDTH, 16, BLACK);
 
-    draw_text(
-        x + 8,
-        y + 5,
-        "MATRIX FILES",
-        WHITE
-    );
-
+    draw_text(x + 8, y + 5, "MATRIX FILES", WHITE);
     draw_files_close_button();
 
     graphics_rectangle(
@@ -578,6 +604,17 @@ static void draw_files_window(void)
         FILES_HEIGHT - 20,
         BLACK
     );
+
+    /* Filesystem action bar. */
+    graphics_rectangle(x + 6, y + FILES_HEIGHT - 24, 52, 18, WHITE);
+    graphics_rectangle(x + 63, y + FILES_HEIGHT - 24, 52, 18, WHITE);
+    graphics_rectangle(x + 120, y + FILES_HEIGHT - 24, 52, 18, WHITE);
+    graphics_rectangle(x + 177, y + FILES_HEIGHT - 24, 46, 18, WHITE);
+
+    draw_text(x + 12, y + FILES_HEIGHT - 20, "NEW", BLACK);
+    draw_text(x + 68, y + FILES_HEIGHT - 20, "FOLDER", BLACK);
+    draw_text(x + 126, y + FILES_HEIGHT - 20, "RENAME", BLACK);
+    draw_text(x + 184, y + FILES_HEIGHT - 20, "DEL", BLACK);
 
     if (files_viewing_file && files_viewed_entry >= 0)
     {
@@ -597,7 +634,7 @@ static void draw_files_window(void)
 
         draw_text(
             x + 12,
-            y + 105,
+            y + 78,
             "BACK",
             GRAY
         );
@@ -624,51 +661,33 @@ static void draw_files_window(void)
     for (int i = 0; i < files_entry_count; i++)
     {
         int entry = files_entries[i];
-        int row_y = y + 43 + (i * 25);
+                        files_selected_entry = entry;
+        int row_y = y + 43 + (i * 20);
 
-        if (row_y + 12 >= y + FILES_HEIGHT)
+        if (row_y + 12 >= y + FILES_HEIGHT - 28)
             break;
+
+        if (entry == files_selected_entry)
+        {
+            graphics_rectangle(
+                x + 7,
+                row_y - 3,
+                FILES_WIDTH - 14,
+                20,
+                GRAY
+            );
+        }
 
         if (matrixfs_is_directory(entry))
         {
-            draw_folder_icon(
-                x + 12,
-                row_y
-            );
+            draw_folder_icon(x + 12, row_y);
         }
         else
         {
-            graphics_rectangle(
-                x + 13,
-                row_y,
-                16,
-                19,
-                WHITE
-            );
-
-            graphics_rectangle(
-                x + 17,
-                row_y + 4,
-                9,
-                1,
-                BLACK
-            );
-
-            graphics_rectangle(
-                x + 17,
-                row_y + 8,
-                9,
-                1,
-                BLACK
-            );
-
-            graphics_rectangle(
-                x + 17,
-                row_y + 12,
-                7,
-                1,
-                BLACK
-            );
+            graphics_rectangle(x + 13, row_y, 16, 19, WHITE);
+            graphics_rectangle(x + 17, row_y + 4, 9, 1, BLACK);
+            graphics_rectangle(x + 17, row_y + 8, 9, 1, BLACK);
+            graphics_rectangle(x + 17, row_y + 12, 7, 1, BLACK);
         }
 
         draw_text(
@@ -1280,6 +1299,84 @@ static void handle_mouse(void)
                 /*
                  * Entry click.
                  */
+                else if (mouse_x >= files_x + 6 &&
+                         mouse_x < files_x + 58 &&
+                         mouse_y >= files_y + FILES_HEIGHT - 24 &&
+                         mouse_y < files_y + FILES_HEIGHT - 6)
+                {
+                    files_click_armed = 0;
+
+                    matrixfs_create_file(
+                        files_current_dir,
+                        "NEWFILE.TXT",
+                        "NEW MATRIXOS FILE"
+                    );
+
+                    files_selected_entry =
+                        matrixfs_find(
+                            files_current_dir,
+                            "NEWFILE.TXT"
+                        );
+
+                    redraw_all();
+                }
+
+                else if (mouse_x >= files_x + 63 &&
+                         mouse_x < files_x + 115 &&
+                         mouse_y >= files_y + FILES_HEIGHT - 24 &&
+                         mouse_y < files_y + FILES_HEIGHT - 6)
+                {
+                    files_click_armed = 0;
+
+                    matrixfs_create_directory(
+                        files_current_dir,
+                        "NEWFOLDER"
+                    );
+
+                    files_selected_entry =
+                        matrixfs_find(
+                            files_current_dir,
+                            "NEWFOLDER"
+                        );
+
+                    redraw_all();
+                }
+
+                else if (mouse_x >= files_x + 120 &&
+                         mouse_x < files_x + 172 &&
+                         mouse_y >= files_y + FILES_HEIGHT - 24 &&
+                         mouse_y < files_y + FILES_HEIGHT - 6)
+                {
+                    files_click_armed = 0;
+
+                    if (files_selected_entry >= 0)
+                    {
+                        matrixfs_rename(
+                            files_selected_entry,
+                            "RENAMED.TXT"
+                        );
+                    }
+
+                    redraw_all();
+                }
+
+                else if (mouse_x >= files_x + 177 &&
+                         mouse_x < files_x + 223 &&
+                         mouse_y >= files_y + FILES_HEIGHT - 24 &&
+                         mouse_y < files_y + FILES_HEIGHT - 6)
+                {
+                    files_click_armed = 0;
+
+                    if (files_selected_entry >= 0)
+                    {
+                        matrixfs_delete(files_selected_entry);
+                        files_selected_entry = -1;
+                    }
+
+                    redraw_all();
+                }
+
+                /* Entry click. */
                 else if (!files_viewing_file)
                 {
                     for (int i = 0;
@@ -1480,6 +1577,7 @@ void kernel_main(void)
     files_viewing_file = 0;
     files_viewed_entry = -1;
     files_click_armed = 0;
+    files_selected_entry = -1;
     previous_mouse_buttons = 0;
     mouse_buttons = 0;
 

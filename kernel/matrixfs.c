@@ -1,6 +1,6 @@
 /*
  * MatrixOS MatrixFS
- * Version 0.1 - In-Memory Filesystem
+ * Version 0.2 - In-Memory Filesystem
  */
 
 #define MATRIXFS_MAX_FILES 16
@@ -20,9 +20,7 @@ typedef struct
 
 } matrixfs_entry_t;
 
-
 static matrixfs_entry_t matrixfs_entries[MATRIXFS_MAX_FILES];
-
 static int matrixfs_initialized = 0;
 
 
@@ -30,17 +28,11 @@ static int matrixfs_initialized = 0;
    Internal string helpers
    ======================================== */
 
-static void fs_copy(
-    char *destination,
-    const char *source
-)
+static void fs_copy(char *destination, const char *source)
 {
     int i = 0;
 
-    while (
-        source[i] &&
-        i < MATRIXFS_NAME_MAX - 1
-    )
+    while (source[i] && i < MATRIXFS_NAME_MAX - 1)
     {
         destination[i] = source[i];
         i++;
@@ -49,11 +41,20 @@ static void fs_copy(
     destination[i] = 0;
 }
 
+static void fs_data_copy(char *destination, const char *source)
+{
+    int i = 0;
 
-static int fs_equal(
-    const char *a,
-    const char *b
-)
+    while (source[i] && i < MATRIXFS_DATA_MAX - 1)
+    {
+        destination[i] = source[i];
+        i++;
+    }
+
+    destination[i] = 0;
+}
+
+static int fs_equal(const char *a, const char *b)
 {
     while (*a && *b)
     {
@@ -112,20 +113,9 @@ void matrixfs_init(void)
     matrixfs_entries[3].used = 1;
     matrixfs_entries[3].directory = 0;
 
-    fs_copy(
-        matrixfs_entries[3].name,
-        "README.TXT"
-    );
-
-    fs_copy(
-        matrixfs_entries[3].parent,
-        "DOCUMENTS"
-    );
-
-    fs_copy(
-        matrixfs_entries[3].data,
-        "WELCOME TO MATRIXOS"
-    );
+    fs_copy(matrixfs_entries[3].name, "README.TXT");
+    fs_copy(matrixfs_entries[3].parent, "DOCUMENTS");
+    fs_data_copy(matrixfs_entries[3].data, "WELCOME TO MATRIXOS");
 
     matrixfs_entries[3].size = 19;
 
@@ -134,20 +124,9 @@ void matrixfs_init(void)
     matrixfs_entries[4].used = 1;
     matrixfs_entries[4].directory = 0;
 
-    fs_copy(
-        matrixfs_entries[4].name,
-        "MATRIXOS.TXT"
-    );
-
-    fs_copy(
-        matrixfs_entries[4].parent,
-        "DOCUMENTS"
-    );
-
-    fs_copy(
-        matrixfs_entries[4].data,
-        "MATRIXOS SYSTEM FILE"
-    );
+    fs_copy(matrixfs_entries[4].name, "MATRIXOS.TXT");
+    fs_copy(matrixfs_entries[4].parent, "DOCUMENTS");
+    fs_data_copy(matrixfs_entries[4].data, "MATRIXOS SYSTEM FILE");
 
     matrixfs_entries[4].size = 21;
 
@@ -159,10 +138,7 @@ void matrixfs_init(void)
    Find entry
    ======================================== */
 
-int matrixfs_find(
-    const char *parent,
-    const char *name
-)
+int matrixfs_find(const char *parent, const char *name)
 {
     int i;
 
@@ -173,14 +149,10 @@ int matrixfs_find(
         if (!matrixfs_entries[i].used)
             continue;
 
-        if (!fs_equal(
-                matrixfs_entries[i].parent,
-                parent))
+        if (!fs_equal(matrixfs_entries[i].parent, parent))
             continue;
 
-        if (!fs_equal(
-                matrixfs_entries[i].name,
-                name))
+        if (!fs_equal(matrixfs_entries[i].name, name))
             continue;
 
         return i;
@@ -191,16 +163,235 @@ int matrixfs_find(
 
 
 /* ========================================
+   Find free slot
+   ======================================== */
+
+static int matrixfs_find_free(void)
+{
+    int i;
+
+    for (i = 0; i < MATRIXFS_MAX_FILES; i++)
+    {
+        if (!matrixfs_entries[i].used)
+            return i;
+    }
+
+    return -1;
+}
+
+
+/* ========================================
+   Create file
+   ======================================== */
+
+int matrixfs_create_file(
+    const char *parent,
+    const char *name,
+    const char *data)
+{
+    int index;
+
+    matrixfs_init();
+
+    if (!name || !name[0])
+        return -1;
+
+    if (matrixfs_find(parent, name) >= 0)
+        return -1;
+
+    index = matrixfs_find_free();
+
+    if (index < 0)
+        return -1;
+
+    matrixfs_entries[index].used = 1;
+    matrixfs_entries[index].directory = 0;
+
+    fs_copy(matrixfs_entries[index].name, name);
+    fs_copy(matrixfs_entries[index].parent, parent);
+
+    if (data)
+        fs_data_copy(matrixfs_entries[index].data, data);
+    else
+        matrixfs_entries[index].data[0] = 0;
+
+    index = matrixfs_find(parent, name);
+
+    if (index >= 0)
+    {
+        int size = 0;
+
+        while (matrixfs_entries[index].data[size] &&
+               size < MATRIXFS_DATA_MAX - 1)
+        {
+            size++;
+        }
+
+        matrixfs_entries[index].size = size;
+    }
+
+    return index;
+}
+
+
+/* ========================================
+   Create directory
+   ======================================== */
+
+int matrixfs_create_directory(
+    const char *parent,
+    const char *name)
+{
+    int index;
+
+    matrixfs_init();
+
+    if (!name || !name[0])
+        return -1;
+
+    if (matrixfs_find(parent, name) >= 0)
+        return -1;
+
+    index = matrixfs_find_free();
+
+    if (index < 0)
+        return -1;
+
+    matrixfs_entries[index].used = 1;
+    matrixfs_entries[index].directory = 1;
+    matrixfs_entries[index].size = 0;
+
+    fs_copy(matrixfs_entries[index].name, name);
+    fs_copy(matrixfs_entries[index].parent, parent);
+
+    matrixfs_entries[index].data[0] = 0;
+
+    return index;
+}
+
+
+/* ========================================
+   Delete entry
+   ======================================== */
+
+int matrixfs_delete(int index)
+{
+    matrixfs_init();
+
+    if (index < 0 ||
+        index >= MATRIXFS_MAX_FILES ||
+        !matrixfs_entries[index].used)
+    {
+        return 0;
+    }
+
+    /*
+     * Do not allow deleting built-in root folders
+     * for now.
+     */
+    if (index <= 2)
+        return 0;
+
+    matrixfs_entries[index].used = 0;
+    matrixfs_entries[index].directory = 0;
+    matrixfs_entries[index].size = 0;
+
+    matrixfs_entries[index].name[0] = 0;
+    matrixfs_entries[index].parent[0] = 0;
+    matrixfs_entries[index].data[0] = 0;
+
+    return 1;
+}
+
+
+/* ========================================
+   Rename entry
+   ======================================== */
+
+int matrixfs_rename(
+    int index,
+    const char *new_name)
+{
+    matrixfs_init();
+
+    if (index < 0 ||
+        index >= MATRIXFS_MAX_FILES ||
+        !matrixfs_entries[index].used)
+    {
+        return 0;
+    }
+
+    if (!new_name || !new_name[0])
+        return 0;
+
+    if (index <= 2)
+        return 0;
+
+    if (matrixfs_find(
+            matrixfs_entries[index].parent,
+            new_name) >= 0)
+    {
+        return 0;
+    }
+
+    fs_copy(
+        matrixfs_entries[index].name,
+        new_name
+    );
+
+    return 1;
+}
+
+
+/* ========================================
+   Write file
+   ======================================== */
+
+int matrixfs_write(
+    int index,
+    const char *data)
+{
+    int size = 0;
+
+    matrixfs_init();
+
+    if (index < 0 ||
+        index >= MATRIXFS_MAX_FILES ||
+        !matrixfs_entries[index].used ||
+        matrixfs_entries[index].directory)
+    {
+        return 0;
+    }
+
+    if (!data)
+        data = "";
+
+    fs_data_copy(
+        matrixfs_entries[index].data,
+        data
+    );
+
+    while (matrixfs_entries[index].data[size] &&
+           size < MATRIXFS_DATA_MAX - 1)
+    {
+        size++;
+    }
+
+    matrixfs_entries[index].size = size;
+
+    return 1;
+}
+
+
+/* ========================================
    Check directory
    ======================================== */
 
 int matrixfs_is_directory(int index)
 {
-    if (
-        index < 0 ||
+    if (index < 0 ||
         index >= MATRIXFS_MAX_FILES ||
-        !matrixfs_entries[index].used
-    )
+        !matrixfs_entries[index].used)
     {
         return 0;
     }
@@ -215,11 +406,9 @@ int matrixfs_is_directory(int index)
 
 const char *matrixfs_name(int index)
 {
-    if (
-        index < 0 ||
+    if (index < 0 ||
         index >= MATRIXFS_MAX_FILES ||
-        !matrixfs_entries[index].used
-    )
+        !matrixfs_entries[index].used)
     {
         return "";
     }
@@ -234,17 +423,32 @@ const char *matrixfs_name(int index)
 
 const char *matrixfs_read(int index)
 {
-    if (
-        index < 0 ||
+    if (index < 0 ||
         index >= MATRIXFS_MAX_FILES ||
         !matrixfs_entries[index].used ||
-        matrixfs_entries[index].directory
-    )
+        matrixfs_entries[index].directory)
     {
         return "";
     }
 
     return matrixfs_entries[index].data;
+}
+
+
+/* ========================================
+   Get file size
+   ======================================== */
+
+int matrixfs_size(int index)
+{
+    if (index < 0 ||
+        index >= MATRIXFS_MAX_FILES ||
+        !matrixfs_entries[index].used)
+    {
+        return 0;
+    }
+
+    return matrixfs_entries[index].size;
 }
 
 
@@ -255,8 +459,7 @@ const char *matrixfs_read(int index)
 int matrixfs_list(
     const char *parent,
     int *results,
-    int max_results
-)
+    int max_results)
 {
     int count = 0;
     int i;
@@ -271,7 +474,9 @@ int matrixfs_list(
         if (!fs_equal(
                 matrixfs_entries[i].parent,
                 parent))
+        {
             continue;
+        }
 
         if (count >= max_results)
             break;

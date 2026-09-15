@@ -59,7 +59,7 @@ start:
     ; ----------------------------------------
 
     mov ah, 0x02
-    mov al, 4
+    mov al, 12
     mov ch, 0
     mov cl, 1
     mov dh, 1
