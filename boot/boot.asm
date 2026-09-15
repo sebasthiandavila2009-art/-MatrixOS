@@ -1,14 +1,12 @@
 ; MatrixOS Bootloader
-; Version 4.1 - VGA Mode 13h
+; Version 5.1 - Complete Floppy Kernel Loader
 
 BITS 16
 ORG 0x7C00
 
 start:
-
     cli
 
-    ; Save BIOS boot drive
     mov [boot_drive], dl
 
     xor ax, ax
@@ -23,63 +21,78 @@ start:
     int 0x13
     jc disk_error
 
-    ; ------------------------------------
-    ; Load kernel
-    ; Sectors 2-17
-    ; Address 0x1000
-    ; ------------------------------------
+    ; ========================================
+    ; Load MatrixOS kernel
+    ;
+    ; Current kernel = 10408 bytes
+    ; Required = 21 sectors
+    ;
+    ; Head 0: sectors 2-18 = 17 sectors
+    ; Head 1: sectors 1-4  = 4 sectors
+    ;
+    ; Kernel destination = 0000:1000
+    ; ========================================
 
     xor ax, ax
     mov es, ax
 
     mov bx, 0x1000
-    mov byte [current_sector], 2
-    mov byte [sectors_left], 16
 
-load_kernel:
+    ; ----------------------------------------
+    ; First 17 sectors — head 0
+    ; ----------------------------------------
 
     mov ah, 0x02
-    mov al, 1
+    mov al, 17
     mov ch, 0
-    mov cl, [current_sector]
+    mov cl, 2
     mov dh, 0
     mov dl, [boot_drive]
 
     int 0x13
     jc disk_error
 
-    add bx, 512
+    add bx, 8704
 
-    inc byte [current_sector]
-    dec byte [sectors_left]
+    ; ----------------------------------------
+    ; Remaining 4 sectors — head 1
+    ; ----------------------------------------
 
-    jnz load_kernel
+    mov ah, 0x02
+    mov al, 4
+    mov ch, 0
+    mov cl, 1
+    mov dh, 1
+    mov dl, [boot_drive]
 
-    ; ------------------------------------
-    ; Switch VGA to 320x200 Mode 13h
-    ; ------------------------------------
+    int 0x13
+    jc disk_error
+
+    ; ========================================
+    ; VGA Mode 13h
+    ; ========================================
 
     mov ax, 0x0013
     int 0x10
 
-    ; ------------------------------------
+    ; ========================================
     ; Load GDT
-    ; ------------------------------------
+    ; ========================================
 
     cli
     lgdt [gdt_descriptor]
 
-    ; ------------------------------------
+    ; ========================================
     ; Enable protected mode
-    ; ------------------------------------
+    ; ========================================
 
     mov eax, cr0
     or eax, 1
     mov cr0, eax
 
-    ; ------------------------------------
-    ; 32-bit far jump
-    ; ------------------------------------
+    ; ========================================
+    ; Far jump to protected mode
+    ; ========================================
 
     db 0x66
     db 0xEA
@@ -88,39 +101,22 @@ load_kernel:
 
 
 ; ========================================
-; BIOS text output
+; Disk Error
 ; ========================================
 
-print_char:
+disk_error:
+    mov si, msg_error
+
+.print:
+    lodsb
+    test al, al
+    jz .hang
 
     mov ah, 0x0E
     mov bh, 0
     int 0x10
-    ret
 
-
-print_string:
-
-.next:
-    lodsb
-    test al, al
-    jz .done
-
-    call print_char
-    jmp .next
-
-.done:
-    ret
-
-
-; ========================================
-; Disk error
-; ========================================
-
-disk_error:
-
-    mov si, msg_error
-    call print_string
+    jmp .print
 
 .hang:
     cli
@@ -136,7 +132,6 @@ BITS 32
 
 protected_mode:
 
-    ; Set data segments FIRST
     mov ax, DATA_SELECTOR
 
     mov ds, ax
@@ -145,12 +140,10 @@ protected_mode:
     mov gs, ax
     mov ss, ax
 
-    ; Protected-mode stack
     mov esp, 0x90000
 
     cld
 
-    ; Jump to kernel
     mov eax, 0x1000
     jmp eax
 
@@ -163,7 +156,6 @@ BITS 16
 
 gdt_start:
 
-    ; Null
     dq 0
 
     ; Code
@@ -184,9 +176,7 @@ gdt_start:
 
 gdt_end:
 
-
 gdt_descriptor:
-
     dw gdt_end - gdt_start - 1
     dd gdt_start
 
@@ -206,12 +196,6 @@ DATA_SELECTOR equ 0x10
 boot_drive:
     db 0
 
-current_sector:
-    db 2
-
-sectors_left:
-    db 16
-
 
 ; ========================================
 ; Messages
@@ -222,9 +206,8 @@ msg_error:
 
 
 ; ========================================
-; Boot signature
+; Boot Signature
 ; ========================================
 
 times 510-($-$$) db 0
-
 dw 0xAA55

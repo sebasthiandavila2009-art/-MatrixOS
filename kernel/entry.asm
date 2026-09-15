@@ -7,8 +7,6 @@ global _start
 extern kernel_main
 
 _start:
-
-    ; Set up stack
     mov esp, 0x90000
 
     ; Write directly to VGA memory
@@ -22,7 +20,6 @@ _start:
     mov word [0xB800E], 0x0753
     mov word [0xB8010], 0x004B
 
-    ; Call C kernel
     call kernel_main
 
 .hang:

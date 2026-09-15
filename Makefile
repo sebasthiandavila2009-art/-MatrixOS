@@ -41,7 +41,12 @@ $(BUILD)/graphics.o: drivers/graphics.c | $(BUILD)
 		-fno-stack-protector -fno-pic -fno-pie \
 		-m32 -c drivers/graphics.c -o $(BUILD)/graphics.o
 
-$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o $(BUILD)/mouse.o $(BUILD)/graphics.o
+$(BUILD)/matrixfs.o: kernel/matrixfs.c | $(BUILD)
+	$(CC) -target i386-unknown-none -ffreestanding \
+		-fno-stack-protector -fno-pic -fno-pie \
+		-m32 -c kernel/matrixfs.c -o $(BUILD)/matrixfs.o
+
+$(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/matrixfs.o $(BUILD)/keyboard.o $(BUILD)/mouse.o $(BUILD)/graphics.o
 	$(LD) -flavor gnu \
 		-e _start \
 		-Ttext 0x1000 \
@@ -50,6 +55,7 @@ $(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/keyboard.o $(BU
 		-o $(BUILD)/kernel.bin \
 		$(BUILD)/entry.o \
 		$(BUILD)/kernel.o \
+		$(BUILD)/matrixfs.o \
 		$(BUILD)/keyboard.o \
 		$(BUILD)/mouse.o \
 		$(BUILD)/graphics.o
@@ -60,7 +66,7 @@ $(IMAGE): $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	dd if=$(BUILD)/kernel.bin of=$(IMAGE) bs=512 seek=1 conv=notrunc
 
 run: $(IMAGE)
-	qemu-system-x86_64 -drive format=raw,file=$(IMAGE)
+	qemu-system-x86_64 -drive file=$(IMAGE),format=raw,if=floppy
 
 clean:
 	rm -rf $(BUILD)

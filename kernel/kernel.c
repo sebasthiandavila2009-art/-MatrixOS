@@ -51,6 +51,20 @@ extern int mouse_get_packet(
     unsigned char *buttons
 );
 
+extern void matrixfs_init(void);
+
+extern int matrixfs_list(
+    const char *parent,
+    int *results,
+    int max_results
+);
+
+extern int matrixfs_is_directory(int index);
+
+extern const char *matrixfs_name(int index);
+
+extern const char *matrixfs_read(int index);
+
 
 /* =========================
    FONT
@@ -232,6 +246,24 @@ static int string_equal(
 /* =========================
    TERMINAL STATE
    ========================= */
+
+/* =========================
+   FILES STATE
+   ========================= */
+
+#define FILES_WIDTH 230
+#define FILES_HEIGHT 135
+
+static int files_open = 0;
+static int files_x = 45;
+static int files_y = 30;
+static int files_dragging = 0;
+static int files_drag_offset_x = 0;
+static int files_drag_offset_y = 0;
+
+static const char *files_current_dir = "/";
+static int files_entries[16];
+static int files_entry_count = 0;
 
 static int terminal_open = 0;
 
@@ -471,6 +503,164 @@ static void terminal_command(void)
 /* =========================
    DESKTOP ICONS
    ========================= */
+
+static void draw_files_close_button(void) {
+    int center_x = files_x + FILES_WIDTH - 12;
+    int center_y = files_y + 8;
+
+    for (int y = -4; y <= 4; y++) {
+        for (int x = -4; x <= 4; x++) {
+            if ((x * x) + (y * y) <= 16) {
+                graphics_put_pixel(center_x + x, center_y + y, RED);
+            }
+        }
+    }
+}
+
+static void draw_folder_icon(int x, int y) {
+    graphics_rectangle(x, y + 4, 18, 14, WHITE);
+    graphics_rectangle(x + 3, y, 9, 5, WHITE);
+}
+
+static void draw_files_window(void)
+{
+    int x = files_x;
+    int y = files_y;
+
+    if (!files_open)
+        return;
+
+    /* Shadow. */
+    graphics_rectangle(
+        x + 3,
+        y + 3,
+        FILES_WIDTH,
+        FILES_HEIGHT,
+        BLACK
+    );
+
+    /* Window border. */
+    graphics_rectangle(
+        x,
+        y,
+        FILES_WIDTH,
+        FILES_HEIGHT,
+        WHITE
+    );
+
+    /* Title bar. */
+    graphics_rectangle(
+        x,
+        y,
+        FILES_WIDTH,
+        16,
+        BLACK
+    );
+
+    draw_text(
+        x + 8,
+        y + 5,
+        "MATRIX FILES",
+        WHITE
+    );
+
+    draw_files_close_button();
+
+    /* Window body. */
+    graphics_rectangle(
+        x,
+        y + 20,
+        FILES_WIDTH,
+        FILES_HEIGHT - 20,
+        BLACK
+    );
+
+    /*
+     * Read the actual MatrixFS directory.
+     *
+     * The old version drew SYSTEM,
+     * DOCUMENTS and DOWNLOADS manually.
+     *
+     * Now the UI gets its entries from
+     * matrixfs.c.
+     */
+    files_entry_count = matrixfs_list(
+        files_current_dir,
+        files_entries,
+        16
+    );
+
+    for (int i = 0; i < files_entry_count; i++)
+    {
+        int entry = files_entries[i];
+        int row_y = y + 31 + (i * 25);
+
+        if (row_y + 12 >= y + FILES_HEIGHT)
+            break;
+
+        if (matrixfs_is_directory(entry))
+        {
+            draw_folder_icon(
+                x + 12,
+                row_y
+            );
+        }
+        else
+        {
+            /*
+             * Simple file icon.
+             */
+            graphics_rectangle(
+                x + 13,
+                row_y,
+                16,
+                19,
+                WHITE
+            );
+
+            graphics_rectangle(
+                x + 17,
+                row_y + 4,
+                9,
+                1,
+                BLACK
+            );
+
+            graphics_rectangle(
+                x + 17,
+                row_y + 8,
+                9,
+                1,
+                BLACK
+            );
+
+            graphics_rectangle(
+                x + 17,
+                row_y + 12,
+                7,
+                1,
+                BLACK
+            );
+        }
+
+        draw_text(
+            x + 38,
+            row_y + 4,
+            matrixfs_name(entry),
+            WHITE
+        );
+    }
+
+    if (files_entry_count == 0)
+    {
+        draw_text(
+            x + 12,
+            y + 35,
+            "EMPTY",
+            GRAY
+        );
+    }
+}
 
 static void draw_terminal_icon(
     int x,
@@ -810,6 +1000,7 @@ static void draw_desktop(void)
     );
 
     draw_terminal_window();
+    draw_files_window();
 }
 
 
@@ -917,6 +1108,91 @@ static void handle_mouse(void)
         );
     }
 
+
+    /*
+     * Open Files.
+     */
+    if ((buttons & 1) &&
+        !(mouse_buttons & 1) &&
+        !terminal_open &&
+        !files_open &&
+        mouse_x >= 100 &&
+        mouse_x < 142 &&
+        mouse_y >= 35 &&
+        mouse_y < 67)
+    {
+        files_open = 1;
+        files_dragging = 0;
+        redraw_all();
+    }
+
+    /*
+     * Files window controls.
+     */
+    if ((buttons & 1) &&
+        !(mouse_buttons & 1) &&
+        files_open)
+    {
+        /*
+         * Close Files.
+         */
+        if (mouse_x >= files_x + FILES_WIDTH - 22 &&
+            mouse_x <= files_x + FILES_WIDTH - 3 &&
+            mouse_y >= files_y + 1 &&
+            mouse_y <= files_y + 15)
+        {
+            files_open = 0;
+            files_dragging = 0;
+            redraw_all();
+        }
+
+        /*
+         * Files title bar.
+         */
+        else if (mouse_x >= files_x &&
+                 mouse_x < files_x + FILES_WIDTH &&
+                 mouse_y >= files_y &&
+                 mouse_y < files_y + 16)
+        {
+            files_dragging = 1;
+
+            files_drag_offset_x =
+                mouse_x - files_x;
+
+            files_drag_offset_y =
+                mouse_y - files_y;
+        }
+    }
+
+    /*
+     * Drag Files.
+     */
+    if ((buttons & 1) &&
+        files_dragging)
+    {
+        restore_cursor_background();
+
+        files_x =
+            mouse_x - files_drag_offset_x;
+
+        files_y =
+            mouse_y - files_drag_offset_y;
+
+        if (files_x < 0)
+            files_x = 0;
+
+        if (files_x > SCREEN_WIDTH - FILES_WIDTH)
+            files_x = SCREEN_WIDTH - FILES_WIDTH;
+
+        if (files_y < 18)
+            files_y = 18;
+
+        if (files_y > SCREEN_HEIGHT - FILES_HEIGHT)
+            files_y = SCREEN_HEIGHT - FILES_HEIGHT;
+
+        draw_desktop();
+        draw_cursor();
+    }
 
     /*
      * Left button just pressed.
@@ -1034,6 +1310,7 @@ static void handle_mouse(void)
     if (!(buttons & 1))
     {
         terminal_dragging = 0;
+        files_dragging = 0;
     }
 
     mouse_buttons = buttons;
@@ -1046,9 +1323,15 @@ static void handle_mouse(void)
 
 void kernel_main(void)
 {
+    matrixfs_init();
     mouse_init();
 
     terminal_open = 0;
+
+    files_open = 0;
+    files_x = 45;
+    files_y = 30;
+    files_dragging = 0;
 
     terminal_x = 25;
     terminal_y = 25;
