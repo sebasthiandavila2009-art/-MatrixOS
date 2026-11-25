@@ -3,7 +3,11 @@
 
 ASM = nasm
 CC = clang
-LD = $(shell brew --prefix lld)/bin/ld.lld
+# Use ld.lld from PATH (Linux, or macOS with lld on PATH); fall back to Homebrew.
+# (LD is a built-in make variable, so test its origin instead of using ?=.)
+ifeq ($(origin LD),default)
+LD = $(shell command -v ld.lld || echo "$$(brew --prefix lld)/bin/ld.lld")
+endif
 
 BUILD = build
 IMAGE = $(BUILD)/matrixos.img
@@ -15,8 +19,11 @@ all: $(IMAGE)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/boot.bin: boot/boot.asm | $(BUILD)
-	$(ASM) -f bin boot/boot.asm -o $(BUILD)/boot.bin
+# The bootloader is told how many sectors to load from the real size of
+# kernel.bin, so it can never fall out of sync with the kernel again.
+$(BUILD)/boot.bin: boot/boot.asm $(BUILD)/kernel.bin | $(BUILD)
+	$(ASM) -f bin -DKERNEL_SECTORS=$$(( ( $$(wc -c < $(BUILD)/kernel.bin) + 511 ) / 512 )) \
+		boot/boot.asm -o $(BUILD)/boot.bin
 
 $(BUILD)/entry.o: kernel/entry.asm | $(BUILD)
 	nasm -f elf32 kernel/entry.asm -o $(BUILD)/entry.o
@@ -48,6 +55,7 @@ $(BUILD)/matrixfs.o: kernel/matrixfs.c | $(BUILD)
 
 $(BUILD)/kernel.bin: $(BUILD)/entry.o $(BUILD)/kernel.o $(BUILD)/matrixfs.o $(BUILD)/keyboard.o $(BUILD)/mouse.o $(BUILD)/graphics.o
 	$(LD) -flavor gnu \
+		-N \
 		-e _start \
 		-Ttext 0x1000 \
 		--image-base 0x0 \

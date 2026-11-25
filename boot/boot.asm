@@ -24,49 +24,66 @@ start:
     ; ========================================
     ; Load MatrixOS kernel
     ;
-    ; Current kernel = 10408 bytes
-    ; Required = 21 sectors
+    ; KERNEL_SECTORS is passed in by the Makefile
+    ; (nasm -DKERNEL_SECTORS=N) from the real size
+    ; of kernel.bin, so it never needs hand-editing.
     ;
-    ; Head 0: sectors 2-18 = 17 sectors
-    ; Head 1: sectors 1-4  = 4 sectors
+    ; The kernel starts at LBA 1 (right after this
+    ; boot sector) and is read one sector at a time,
+    ; converting LBA -> CHS for a 1.44MB floppy
+    ; (18 sectors/track, 2 heads), so it can span
+    ; any number of tracks and cylinders.
     ;
     ; Kernel destination = 0000:1000
     ; ========================================
 
+%ifndef KERNEL_SECTORS
+    %error "KERNEL_SECTORS not defined - build with the Makefile"
+%endif
+
     xor ax, ax
     mov es, ax
 
-    mov bx, 0x1000
+    mov bx, 0x1000              ; load address
+    mov si, 1                   ; current LBA
+    mov di, KERNEL_SECTORS      ; sectors left to read
 
-    ; ----------------------------------------
-    ; First 17 sectors — head 0
-    ; ----------------------------------------
-
-    mov ah, 0x02
-    mov al, 17
-    mov ch, 0
-    mov cl, 2
-    mov dh, 0
+.read_sector:
+    mov ax, si                  ; LBA -> CHS
+    xor dx, dx
+    mov cx, 18
+    div cx                      ; ax = LBA / 18 (track), dx = LBA % 18
+    inc dl
+    mov cl, dl                  ; sector (1-based)
+    mov dh, al
+    and dh, 1                   ; head = track & 1
+    shr ax, 1
+    mov ch, al                  ; cylinder = track >> 1
     mov dl, [boot_drive]
 
+    mov bp, 3                   ; floppy reads can fail; try 3 times
+
+.try:
+    mov ax, 0x0201              ; read 1 sector
     int 0x13
-    jc disk_error
+    jnc .sector_ok
 
-    add bx, 8704
-
-    ; ----------------------------------------
-    ; Remaining 4 sectors — head 1
-    ; ----------------------------------------
-
-    mov ah, 0x02
-    mov al, 12
-    mov ch, 0
-    mov cl, 1
-    mov dh, 1
-    mov dl, [boot_drive]
-
+    push cx
+    push dx
+    xor ah, ah                  ; reset the disk and retry
     int 0x13
-    jc disk_error
+    pop dx
+    pop cx
+
+    dec bp
+    jnz .try
+    jmp disk_error
+
+.sector_ok:
+    add bx, 512
+    inc si
+    dec di
+    jnz .read_sector
 
     ; ========================================
     ; VGA Mode 13h
